@@ -341,6 +341,13 @@ class Boundary extends React.Component {
     return this.props.children
   }
 }
+function UiBadge(props) {
+  const info = (typeof window !== 'undefined' && window.__DND5E_UI) ? window.__DND5E_UI : null
+  if (!info) return null
+  const kb = Math.round((info.bytes || 0) / 1024)
+  const label = 'UI ' + kb + 'KB · ' + (info.from === 'disk' ? '磁盘' : '内联')
+  return h('span', { className: 'dndp-chip', title: '界面源码来源：' + info.from + '，字节 ' + info.bytes + (info.mtimeMs ? ('，mtime ' + new Date(info.mtimeMs).toLocaleTimeString()) : '') }, label)
+}
 function RulesPanel(props) {
   const [q, setQ] = React.useState('')
   const [book, setBook] = React.useState('')
@@ -695,7 +702,7 @@ function PartyView() {
   if (err) rows.push(h('div', { key: 'e', className: 'dndp-err' }, err))
   if (list && !list.length) rows.push(h('div', { key: 'z', className: 'dndp-empty' }, '暂无角色，点“+ 新建角色”'))
   ;(list || []).forEach((l, i) => rows.push(h('div', { key: i, className: 'dndp-row', onClick: () => open(l.id) }, h('div', { className: 'dndp-ava' }, (l.name || '?').slice(0, 1)), h('div', { className: 'dndp-main' }, h('div', { className: 'dndp-name' }, l.name), h('div', { className: 'dndp-sub' }, (l.race || '') + (l.cls ? ' · ' + l.cls : ''))), h('span', { className: 'dndp-chip' }, 'L' + l.level), h('span', { className: 'dndp-chip' }, 'HP ' + l.hp + '/' + l.max))))
-  return h('div', { className: 'dndp-root' }, h('div', { className: 'dndp-header' }, h('span', { className: 'dndp-ic' }, '⚔'), h('span', null, 'D&D 5e 角色'), h('div', { className: 'dndp-sp' }), h('button', { className: 'dndp-btn primary', onClick: () => setMode('build') }, '+ 新建角色')), h('div', { className: 'dndp-scroll' }, rows))
+  return h('div', { className: 'dndp-root' }, h('div', { className: 'dndp-header' }, h('span', { className: 'dndp-ic' }, '⚔'), h('span', null, 'D&D 5e 角色'), h('div', { className: 'dndp-sp' }), h(UiBadge, null), h('button', { className: 'dndp-btn primary', onClick: () => setMode('build') }, '+ 新建角色')), h('div', { className: 'dndp-scroll' }, rows))
 }
 return {
   apply(ctx) {

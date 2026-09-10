@@ -8,7 +8,13 @@ const bundle = fs.readFileSync(path.join(ROOT, 'adapters', 'dsh-profile', 'lib',
 const uiSource = fs.readFileSync(path.join(ROOT, 'engine', 'ui-client.latest.txt'), 'utf8')
 
 let captured = null
-const fakeReact = { createElement: (t, p, ...c) => ({ t, p, c }), useState: (v) => [v, () => { }], useEffect: () => { }, useRef: () => ({ current: null }) }
+const fakeReact = {
+  createElement: (t, p, ...c) => ({ t, p, c }),
+  useState: (v) => [v, () => { }],
+  useEffect: () => { },
+  useRef: () => ({ current: null }),
+  Component: class { constructor(p) { this.props = p || {}; this.state = {} } setState(s) { this.state = Object.assign({}, this.state, s) } },
+}
 const fakeRequire = (id) => { if (id === 'react' || id === 'react/jsx-runtime') return fakeReact; throw new Error('unexpected require: ' + id) }
 
 const styleEls = []
@@ -32,7 +38,7 @@ const fakeFetch = async (url, opts) => {
 
 const win = {
   __ModuleLoader__: { load: (def) => { captured = def } },
-  console: { log() { }, warn() { }, error() { } },
+  console: { log: (...a) => console.log('   [shell.log]', ...a), warn: (...a) => console.log('   [shell.warn]', ...a), error: (...a) => console.log('   [shell.err]', ...a) },
   localStorage: { getItem: () => null, setItem: () => { } },
   innerWidth: 1200, innerHeight: 900,
 }

@@ -49,8 +49,10 @@ async function __loadUISource() {
   try {
     const r = await __api('ui.source', { file: 'ui-client.latest.txt' })
     const src = r && typeof r.source === 'string' ? r.source : ''
-    if (src.length > 1000) return src
+    if (src.length > 1000) { window.__DND5E_UI = { bytes: src.length, mtimeMs: r.mtimeMs || 0, from: 'disk' }; __console.log('[dsh-5ednd] ui loaded from disk: ' + src.length + ' bytes @ ' + (r.mtimeMs || 0)); return src }
   } catch (e) { __console.warn('[dsh-5ednd] ui.source unavailable, using inline snapshot:', e && e.message) }
+  window.__DND5E_UI = { bytes: __INLINE_UI.length, mtimeMs: 0, from: 'inline' }
+  __console.warn('[dsh-5ednd] using INLINE snapshot (' + __INLINE_UI.length + ' bytes) — bundle may be stale')
   return __INLINE_UI
 }
 

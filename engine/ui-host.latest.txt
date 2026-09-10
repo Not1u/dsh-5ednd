@@ -552,7 +552,9 @@ return {
       try {
         const name = String(file || 'ui-client.latest.txt').replace(/[^A-Za-z0-9._-]/g, '')
         const src = await fsRead(ROOT + '/engine/' + name)
-        return { ok: true, file: name, source: src, bytes: src.length }
+        let mtimeMs = 0
+        try { const fs2 = ctx.get('fs'); const st = fs2 && fs2.stat ? await fs2.stat(ROOT + '/engine/' + name) : null; if (st && st.mtimeMs) mtimeMs = st.mtimeMs } catch (e) { }
+        return { ok: true, file: name, source: src, bytes: src.length, mtimeMs: mtimeMs }
       } catch (e) { return { ok: false, error: String(e && e.message || e) } }
     }))
     unreg.push(harness.handle('sheet.patch', async ({ json }) => {
