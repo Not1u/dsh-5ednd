@@ -1,0 +1,24 @@
+# dsh-5ednd bundle patch
+#
+# 这是 `dsh.bundle.patch` 层：当用官方 CLI 安装时
+#
+#   dsh plugin --profile <name> add dsh-5ednd
+#
+# CLI 会对照已安装包协调 dsh.profile.bundles，看到本声明后把 dsh-5ednd
+# 追加进 bundle 栈；profile 启动时合并本 patch（即下面这一行 insert），
+# 等价于手工挂载。无需改 profile 其它文件。
+#
+# 手工挂载（不使用 CLI 时）也可直接把下面的 insert 行复制到
+# profiles/<name>/cordis.patch.yml 中。
+#
+# config 可选字段：
+#   dataRoot  数据根目录（rules/ characters/ 所在处），默认取环境变量 DND5E_DATA_ROOT
+#   indexDir  规则书索引目录，默认 <dataRoot>/data/rules-index
+#   autoIndex 启动时若索引缺失是否自动重建（需要 source 指向本地规则书语料）
+#   source    规则书语料根目录（用于 autoIndex）
+- insert:
+    - id: dsh-5ednd
+      name: 'dsh-5ednd'
+      config:
+        dataRoot: 'E:/HarnessTarvern/dnd5e'
+        indexDir: 'E:/HarnessTarvern/dnd5e/data/rules-index'
