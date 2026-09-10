@@ -58,5 +58,26 @@ if (!sh.ok) { console.log('FAIL: party.sheet'); process.exit(1) }
 
 const bad = await callApi('nope', {})
 console.log('unknown op -> ' + bad.body)
+
+// WRITE TEST: 走一次真实落盘（改 hpTemp 再改回），验证 adapter 注入的 DND5E_WRITE
+const t1 = await callApi('sheet.patch', { json: JSON.stringify({ id: 'pc-turiel-mistveil', patch: { hpTemp: 3 } }) })
+const v1 = JSON.parse(t1.body).value
+const onDisk1 = JSON.parse(fs.readFileSync(path.join(ROOT, 'characters', 'pc-turiel-mistveil.json'), 'utf8')).hp.temp
+console.log('write -> saved=' + v1.saved + ' err=' + (v1.saveError || '-') + ' diskTemp=' + onDisk1)
+const t2 = await callApi('sheet.patch', { json: JSON.stringify({ id: 'pc-turiel-mistveil', patch: { hpTemp: 0 } }) })
+const onDisk2 = JSON.parse(fs.readFileSync(path.join(ROOT, 'characters', 'pc-turiel-mistveil.json'), 'utf8')).hp.temp
+console.log('restore -> diskTemp=' + onDisk2)
+if (onDisk1 !== 3 || onDisk2 !== 0) { console.log('FAIL: direct write not effective'); process.exit(1) }
+
+// CREATE TEST: 完整走一遍建卡落盘（用后即删）
+const spec = { name: '预检角色', player: 'preflight', race: 'dwarf/hill', cls: 'fighter', bg: 'acolyte', scores: { str: 15, dex: 12, con: 14, int: 8, wis: 13, cha: 10 }, skills: ['athletics', 'perception'], cantrips: [], spells: [], pack: 'dungeoneersPack', armor: 'chainMail', weapons: ['longsword'] }
+const t3 = await callApi('build.create', { json: JSON.stringify(spec) })
+const v3 = JSON.parse(t3.body).value
+console.log('create -> ok=' + v3.ok + ' saved=' + v3.saved + ' err=' + (v3.saveError || '-') + ' id=' + v3.id)
+const createdPath = path.join(ROOT, 'characters', v3.id + '.json')
+const exists = fs.existsSync(createdPath)
+console.log('create -> file on disk=' + exists + (v3.problems && v3.problems.length ? (' problems=' + v3.problems.join(';')) : ''))
+if (exists) { fs.unlinkSync(createdPath); console.log('create -> cleaned up') }
+if (!v3.ok || !exists) { console.log('FAIL: create'); process.exit(1) }
 if (typeof dispose === 'function') dispose()
 console.log('PREFLIGHT PASSED (host bridge)')

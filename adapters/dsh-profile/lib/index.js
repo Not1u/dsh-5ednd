@@ -7,6 +7,7 @@
 // 这样：常驻插件与动态插件共享一份业务逻辑，改逻辑只需改仓库文件 + 重启（或重新构建）。
 import path from 'node:path'
 import fsSync from 'node:fs'
+import { writeFile, mkdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 
 export const name = 'dsh-5ednd'
@@ -36,6 +37,12 @@ export function apply(ctx, config = {}) {
     : (process.env.DND5E_DATA_ROOT ? process.env.DND5E_DATA_ROOT.replace(/[\\/]+$/, '') : REPO_ROOT)
   const hostSrc = path.join(repoRoot, 'engine', 'ui-host.latest.txt')
 
+  // 直接落盘能力（profile 插件运行在 Node 侧，无需依赖 tools 作用域）
+  const writeText = async (absPath, text) => {
+    try { await mkdir(path.dirname(absPath), { recursive: true }); await writeFile(absPath, text, 'utf8'); return { ok: true } }
+    catch (e) { return { ok: false, error: String(e && e.message || e) } }
+  }
+
   const rec = {}
   let loaded = false
   let innerDispose = null
@@ -46,8 +53,8 @@ export function apply(ctx, config = {}) {
     let src = fsSync.readFileSync(hostSrc, 'utf8')
     if (src.charCodeAt(0) === 0xfeff) src = src.slice(1)
     const recHarness = { handle: (n, f) => { rec[n] = f; return () => { } } }
-    const factory = new Function('harness', 'ctx', 'console', 'DND5E_ROOT', src)
-    const plugin = factory(recHarness, ctx, console, repoRoot)
+    const factory = new Function('harness', 'ctx', 'console', 'DND5E_ROOT', 'DND5E_WRITE', src)
+    const plugin = factory(recHarness, ctx, console, repoRoot, writeText)
     if (!plugin || typeof plugin.apply !== 'function') throw new Error('inner host shape invalid')
     const d = plugin.apply(ctx)
     if (typeof d === 'function') innerDispose = d

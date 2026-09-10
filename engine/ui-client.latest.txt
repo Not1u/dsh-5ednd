@@ -1,5 +1,28 @@
 // v16 client — spell pick cards show full spell detail; pools pre-filtered by host
 const h = React.createElement
+// —— 统一传输层：优先走同源 HTTP 桥（profile 常驻插件 /dnd5e/api，可直接落盘），
+//    不可用时回退动态插件的 host.call。
+const __rawCall = (typeof host !== 'undefined' && host && typeof host.call === 'function') ? host.call.bind(host) : null
+const __bridgeCall = async (name, args) => {
+  try {
+    if (typeof fetch !== 'function') return null
+    const res = await fetch('/dnd5e/api', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ op: name, args: args === undefined ? null : args }),
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    if (!data || data.ok !== true) return null
+    return data.value
+  } catch (e) { return null }
+}
+const call = async (name, args) => {
+  const viaBridge = await __bridgeCall(name, args)
+  if (viaBridge !== null) return viaBridge
+  if (__rawCall) return __rawCall(name, args)
+  throw new Error('[dnd-5ednd] no transport for ' + name)
+}
 const css = `
 .dndp-root{display:flex;flex-direction:column;height:100%;box-sizing:border-box;color:var(--dsw-alias-label-primary);font-size:13px;line-height:1.55}
 .dndp-header{display:flex;align-items:center;gap:10px;padding:10px 14px;font-weight:600;font-size:13px;border-bottom:1px solid var(--dsw-alias-border-l1);flex:none}
@@ -156,12 +179,12 @@ function LevelSet(props) {
   const [states, setStates] = React.useState([])
   const [busy, setBusy] = React.useState(false)
   const [msg, setMsg] = React.useState('')
-  const calc = () => { host.call('levelset.info', { id: s.id, target: target }).then(r => { if (r && r.ok) { setInfo(r); setStates((r.pending || []).map(() => ({}))) } else setMsg((r && r.error) || '计算失败') }) }
+  const calc = () => { call('levelset.info', { id: s.id, target: target }).then(r => { if (r && r.ok) { setInfo(r); setStates((r.pending || []).map(() => ({}))) } else setMsg((r && r.error) || '计算失败') }) }
   const doApply = async () => {
     setBusy(true); setMsg('')
     try {
       const choices = (info.pending || []).map((ch, i) => { const st = states[i] || {}; if (ch.kind === 'subclass') return { kind: 'subclass', key: st.key, picks: st.picks }; if (ch.kind === 'pactBoon') return { kind: 'pactBoon', key: st.key }; if (ch.kind === 'invocation') return { kind: 'invocation', keys: st.keys }; if (ch.kind === 'asi') return Object.assign({ kind: 'asi' }, st); if (ch.kind === 'cantrip' || ch.kind === 'spell') return { kind: ch.kind, keys: st.keys }; return null }).filter(x => x && (x.key || x.keys || x.mode))
-      const r = await host.call('levelset.apply', { json: JSON.stringify({ id: s.id, target: target, choices: choices }) })
+      const r = await call('levelset.apply', { json: JSON.stringify({ id: s.id, target: target, choices: choices }) })
       if (r && r.ok) { setMsg(r.summary + (r.saved ? '（已保存）' : '（未保存：' + (r.saveError || '未知原因') + '）')); setInfo(null); if (props.onReload) props.onReload() } else setMsg((r && r.error) || '应用失败')
     } catch (e) { setMsg(String(e && e.message || e)) }
     setBusy(false)
@@ -194,7 +217,7 @@ function StatusPanel(props) {
   const call = async (payload) => {
     setBusy(true); setMsg('')
     try {
-      const r = await host.call('sheet.condition.set', { json: JSON.stringify(Object.assign({ id: s.id }, payload)) })
+      const r = await call('sheet.condition.set', { json: JSON.stringify(Object.assign({ id: s.id }, payload)) })
       if (r && r.ok) { setMsg(r.summary + (r.saved ? '（已保存）' : '（未保存：' + (r.saveError || '未知原因') + '）')); if (props.onReload) props.onReload() } else setMsg((r && r.error) || '操作失败')
     } catch (e) { setMsg(String(e && e.message || e)) }
     setBusy(false)
@@ -224,7 +247,7 @@ function EquipPanel(props) {
   const call = async (slot, key) => {
     setBusy(true); setMsg('')
     try {
-      const r = await host.call('sheet.equip', { json: JSON.stringify({ id: s.id, slot: slot, key: key || null, clear: !key }) })
+      const r = await call('sheet.equip', { json: JSON.stringify({ id: s.id, slot: slot, key: key || null, clear: !key }) })
       if (r && r.ok) { setMsg(r.summary + (r.saved ? '（已保存）' : '（未保存：' + (r.saveError || '未知原因') + '）')); if (props.onReload) props.onReload() } else setMsg((r && r.error) || '操作失败')
     } catch (e) { setMsg(String(e && e.message || e)) }
     setBusy(false)
@@ -259,7 +282,7 @@ function Bag(props) {
   const call = async (name2, payload) => {
     setBusy(true); setMsg('')
     try {
-      const r = await host.call(name2, { json: JSON.stringify(Object.assign({ id: s.id }, payload)) })
+      const r = await call(name2, { json: JSON.stringify(Object.assign({ id: s.id }, payload)) })
       if (r && r.ok) { setMsg(r.summary + (r.saved ? '（已保存）' : '（未保存：' + (r.saveError || '未知原因') + '）')); if (props.onReload) props.onReload() } else setMsg((r && r.error) || '操作失败')
     } catch (e) { setMsg(String(e && e.message || e)) }
     setBusy(false)
@@ -297,7 +320,7 @@ function Bag(props) {
   const [msg, setMsg] = React.useState('')
   const [recent, setRecent] = React.useState(() => { try { const v = localStorage.getItem('dnd5e.recentRules'); return v ? JSON.parse(v) : [] } catch (e) { return [] } })
   React.useEffect(() => {
-    host.call('rules.stats', {}).then(r => { if (r && r.ok) setStats(r); else setMsg('规则索引不可用：' + ((r && r.error) || '') + '（在仓库运行 node tools/index-rules.mjs 生成索引）') }).catch(e => setMsg(String(e && e.message || e)))
+    call('rules.stats', {}).then(r => { if (r && r.ok) setStats(r); else setMsg('规则索引不可用：' + ((r && r.error) || '') + '（在仓库运行 node tools/index-rules.mjs 生成索引）') }).catch(e => setMsg(String(e && e.message || e)))
   }, [])
   const remember = (term) => {
     const next = [term].concat(recent.filter(x => x !== term)).slice(0, 6)
@@ -313,7 +336,7 @@ function Bag(props) {
     try {
       const args = { query: query, limit: 12 }
       if (book) args.book = book
-      const r = await host.call('rules.search', args)
+      const r = await call('rules.search', args)
       if (r && r.ok) { setItems(r.items || []); remember(query.trim()); if (!(r.items || []).length) setMsg('未命中：' + query) } else setMsg((r && r.error) || '检索失败')
     } catch (e) { setMsg(String(e && e.message || e)) }
     setBusy(false)
@@ -322,7 +345,7 @@ function Bag(props) {
     if (openId === id) { setOpenId(''); return }
     setOpenId(id); setText('读取中…')
     try {
-      const r = await host.call('rules.read', { id: id })
+      const r = await call('rules.read', { id: id })
       setText(r && r.ok ? r.entry.text : ('读取失败：' + ((r && r.error) || '')))
     } catch (e) { setText(String(e && e.message || e)) }
   }
@@ -386,7 +409,7 @@ function Multiclass(props) {
   const avail = Object.keys(CLSN).filter(k => !owned.includes(k))
   const add = async () => {
     setBusy(true); setMsg('')
-    try { const r = await host.call('multiclass.add', { json: JSON.stringify({ id: s.id, cls: cls }) }); if (r && r.ok) { setMsg(r.summary + (r.saved ? '（已保存）' : '（未保存：' + (r.saveError || '未知原因') + '）')); if (props.onReload) props.onReload() } else setMsg((r && r.error) || '兼职失败') } catch (e) { setMsg(String(e && e.message || e)) }
+    try { const r = await call('multiclass.add', { json: JSON.stringify({ id: s.id, cls: cls }) }); if (r && r.ok) { setMsg(r.summary + (r.saved ? '（已保存）' : '（未保存：' + (r.saveError || '未知原因') + '）')); if (props.onReload) props.onReload() } else setMsg((r && r.error) || '兼职失败') } catch (e) { setMsg(String(e && e.message || e)) }
     setBusy(false)
   }
   return h('div', { className: 'dndp-panel' },
@@ -410,7 +433,7 @@ function ManualEdit(props) {
   const save = async () => {
     setBusy(true); setMsg('')
     try {
-      const r = await host.call('sheet.patch', { json: JSON.stringify({ id: s.id, patch: { hpCur: hpCur, hpMax: hpMax, hpTemp: hpTemp, xp: xp, ac: ac } }) })
+      const r = await call('sheet.patch', { json: JSON.stringify({ id: s.id, patch: { hpCur: hpCur, hpMax: hpMax, hpTemp: hpTemp, xp: xp, ac: ac } }) })
       if (r && r.ok) { setMsg(r.summary + (r.saved ? '（已保存）' : '（未保存：' + (r.saveError || '未知原因') + '）')); if (props.onReload) props.onReload() } else setMsg((r && r.error) || '保存失败')
     } catch (e) { setMsg(String(e && e.message || e)) }
     setBusy(false)
@@ -498,8 +521,8 @@ function Wizard(props) {
   const [weapons, setWeapons] = React.useState([])
   const [armorSel, setArmorSel] = React.useState(null)
   const [result, setResult] = React.useState(null)
-  React.useEffect(() => { host.call('build.options', {}).then(r => { if (r && r.ok) setOpts(r) }).catch(e => setErr(String(e && e.message || e))) }, [])
-  function loadCaster(c) { host.call('build.caster', { cls: c }).then(r => { setCaster(r && r.ok ? r : null); setSpellsAll((r && r.ok && r.spells) || []) }).catch(() => setCaster(null)) }
+  React.useEffect(() => { call('build.options', {}).then(r => { if (r && r.ok) setOpts(r) }).catch(e => setErr(String(e && e.message || e))) }, [])
+  function loadCaster(c) { call('build.caster', { cls: c }).then(r => { setCaster(r && r.ok ? r : null); setSpellsAll((r && r.ok && r.spells) || []) }).catch(() => setCaster(null)) }
   const pickClass = (k) => { setCls(k); setSub(''); setSubPicks({}); setCaster(null); setSpellsAll([]); loadCaster(k) }
   const spend = () => AB.reduce((s, a) => s + PBCOST[scores[a]], 0)
   const raceSel = opts && opts.races.find(r => r.key === race)
@@ -612,7 +635,7 @@ function Wizard(props) {
     const doCreate = async () => {
       setBusy(true); setErr('')
       try {
-        const r = await host.call('build.create', { json: JSON.stringify({ name, player, race, cls, subclass: sub || undefined, subPicks: subPicks, bg, scores, skills, cantrips, spells, pack, armor: armorSel, weapons }) })
+        const r = await call('build.create', { json: JSON.stringify({ name, player, race, cls, subclass: sub || undefined, subPicks: subPicks, bg, scores, skills, cantrips, spells, pack, armor: armorSel, weapons }) })
         if (r && r.ok) setResult(r); else setErr((r && r.error) || 'create failed')
       } catch (e) { setErr(String(e && e.message || e)) }
       setBusy(false)
@@ -630,8 +653,8 @@ function PartyView() {
   const [busy, setBusy] = React.useState(false)
   const [sel, setSel] = React.useState(null)
   const [loading, setLoading] = React.useState(false)
-  function refresh() { setBusy(true); setErr(''); host.call('party.list', {}).then(r => { if (r && r.ok) setList(r.items); else setErr((r && r.error) || 'list failed') }).catch(e => setErr(String(e && e.message || e))).then(() => setBusy(false)) }
-  function open(id) { setLoading(true); setErr(''); host.call('party.sheet', { id }).then(r => { if (r && r.ok) setSel(r.sheet); else setErr((r && r.error) || 'sheet failed') }).catch(e => setErr(String(e && e.message || e))).then(() => setLoading(false)) }
+  function refresh() { setBusy(true); setErr(''); call('party.list', {}).then(r => { if (r && r.ok) setList(r.items); else setErr((r && r.error) || 'list failed') }).catch(e => setErr(String(e && e.message || e))).then(() => setBusy(false)) }
+  function open(id) { setLoading(true); setErr(''); call('party.sheet', { id }).then(r => { if (r && r.ok) setSel(r.sheet); else setErr((r && r.error) || 'sheet failed') }).catch(e => setErr(String(e && e.message || e))).then(() => setLoading(false)) }
   React.useEffect(() => { refresh() }, [])
   if (mode === 'build') return h(Wizard, { onDone: () => { setMode('list'); refresh() }, onBack: () => setMode('list') })
   if (sel) return h('div', { className: 'dndp-root' }, h('div', { className: 'dndp-header' }, h('span', { className: 'dndp-ic' }, '⚔'), h('span', null, sel.name), h('div', { className: 'dndp-sp' }), h(XpWidget, { s: sel }), h('button', { className: 'dndp-btn', onClick: () => setSel(null) }, '返回列表')), h('div', { className: 'dndp-scroll' }, loading ? h('div', { className: 'dndp-empty' }, '加载中…') : h(Detail, { s: sel, onReload: () => { open(sel.id); refresh() } })))

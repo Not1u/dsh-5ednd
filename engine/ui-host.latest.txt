@@ -54,7 +54,18 @@ return {
         return (v && typeof v === 'object') ? v : { ok: false, error: 'unexpected tool result' }
       } catch (e) { return { ok: false, error: String(e && e.message || e) } }
     }
-    const persist = async (pc) => { const r = await callTool('dnd_save', { json: JSON.stringify({ id: pc.id, character: JSON.stringify(pc) }) }); overlay.set(pc.id, pc); return r }
+    const persist = async (pc) => {
+      overlay.set(pc.id, pc)
+      if (typeof DND5E_WRITE === 'function') {
+        try {
+          const wr = await DND5E_WRITE(CHAR_DIR + '/' + pc.id + '.json', JSON.stringify(pc, null, 2))
+          if (wr && wr.ok) return { ok: true, summary: 'direct write' }
+          return { ok: false, error: (wr && wr.error) || 'direct write failed' }
+        } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+      }
+      const r = await callTool('dnd_save', { json: JSON.stringify({ id: pc.id, character: JSON.stringify(pc) }) })
+      return r
+    }
     const jclean = (v) => { if (v === undefined) return null; if (v === null) return null; if (Array.isArray(v)) return v.map(jclean); if (typeof v === 'object') { const o = {}; for (const k of Object.keys(v)) o[k] = jclean(v[k]); return o } return v }
     const fsRead = async (p) => { const fs = ctx.get('fs'); const t = await fs.resolve(p); let s = await fs.readText(t); if (s.charCodeAt(0) === 0xfeff) s = s.slice(1); return s }
     const loadSrd = async () => { if (!srdCache) { srdCache = JSON.parse(await fsRead(RULES_PATH)); srdCache.races.forEach(r => { raceNameMap[r.key] = r.name }) } return srdCache }
@@ -409,11 +420,16 @@ return {
     }))
     // —— 规则书检索（读取本地索引，索引由 tools/index-rules.mjs 生成）——
     const INDEX_DIR = ROOT + '/data/rules-index'
-    let indexCache = null
-    const loadIndex = async () => {
-      if (indexCache) return indexCache
-      let manifest = { books: [] }
-      try { manifest = JSON.parse(await fsRead(INDEX_DIR + '/manifest.json')) } catch (e) { manifest = { books: [] } }
+    let manifestCache = null
+    let entriesCache = null
+    const loadManifest = async () => {
+      if (manifestCache) return manifestCache
+      try { manifestCache = JSON.parse(await fsRead(INDEX_DIR + '/manifest.json')) } catch (e) { manifestCache = { books: [], generatedAt: null } }
+      return manifestCache
+    }
+    const loadEntries = async () => {
+      if (entriesCache) return entriesCache
+      const manifest = await loadManifest()
       const entries = []
       for (const b of (manifest.books || [])) {
         try {
@@ -421,9 +437,10 @@ return {
           for (const line of txt.split('\n')) { if (!line.trim()) continue; try { entries.push(JSON.parse(line)) } catch (e) { } }
         } catch (e) { }
       }
-      indexCache = { manifest, entries }
-      return indexCache
+      entriesCache = entries
+      return entries
     }
+
     const countOf = (hay, needle) => { let n = 0, i = 0; const h = String(hay).toLowerCase(), nd = String(needle).toLowerCase(); while ((i = h.indexOf(nd, i)) !== -1) { n++; i += nd.length } return n }
     const makeSnippet = (text, term, width) => {
       const w = width || 70
@@ -435,8 +452,9 @@ return {
 
     unreg.push(harness.handle('rules.stats', async () => {
       try {
-        const idx = await loadIndex()
-        return jclean({ ok: true, generatedAt: idx.manifest.generatedAt || null, total: idx.entries.length, books: (idx.manifest.books || []).map(b => ({ book: b.book, entries: b.entries })) })
+        const m = await loadManifest()
+        const books = (m.books || []).map(b => ({ book: b.book, entries: b.entries }))
+        return jclean({ ok: true, generatedAt: m.generatedAt || null, total: books.reduce((a, b) => a + b.entries, 0), books: books, cached: !!entriesCache })
       } catch (e) { return { ok: false, error: String(e && e.message || e) } }
     }))
 
@@ -444,8 +462,8 @@ return {
       try {
         const terms = String(query || '').trim().split(/[\s,，]+/).filter(Boolean)
         if (!terms.length) return { ok: true, items: [] }
-        const idx = await loadIndex()
-        const pool = book ? idx.entries.filter(e => e.book === book) : idx.entries
+        const entries = await loadEntries()
+        const pool = book ? entries.filter(e => e.book === book) : entries
         const hits = []
         for (const e of pool) {
           let score = 0, ok = true
@@ -465,8 +483,8 @@ return {
 
     unreg.push(harness.handle('rules.read', async ({ id }) => {
       try {
-        const idx = await loadIndex()
-        const e = idx.entries.find(x => x.id === id)
+        const entries = await loadEntries()
+        const e = entries.find(x => x.id === id)
         if (!e) return { ok: false, error: '未找到条目 ' + id }
         return { ok: true, entry: { id: e.id, book: e.book, title: e.title, file: e.file, text: e.text } }
       } catch (e) { return { ok: false, error: String(e && e.message || e) } }
