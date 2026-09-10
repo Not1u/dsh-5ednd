@@ -277,7 +277,7 @@ function Bag(props) {
   const [desc, setDesc] = React.useState('')
   const [busy, setBusy] = React.useState(false)
   const [msg, setMsg] = React.useState('')
-  const kinds = { armor: '护甲', shield: '盾牌', weapon: '武器', gear: '杂物' }
+  const [openPack, setOpenPack] = React.useState('')
   const inv = s.inventory || []
   const call = async (name2, payload) => {
     setBusy(true); setMsg('')
@@ -288,18 +288,36 @@ function Bag(props) {
     setBusy(false)
   }
   const slotsFor = (it) => { const k = it.kind || 'gear'; if (k === 'armor') return [['armor', '装备为护甲']]; if (k === 'shield') return [['shield', '持盾']]; if (k === 'weapon') return [['mainHand', '主手'], ['offHand', '副手']]; return [['worn', '随身佩戴']] }
-  const cards = inv.map((it, i) => h('div', { key: it.key || i, className: 'dndp-sect' },
-    h('div', { className: 'dndp-sec', style: { cursor: 'default' } }, h('span', null, it.name + (it.qty > 1 ? ' ×' + it.qty : '')), h('div', { className: 'dndp-sp' }), h('span', { className: 'dndp-chip' }, kinds[it.kind] || it.kind || '杂物')),
-    h('div', { className: 'dndp-body' },
-      (it.damage || it.acBonus || it.base != null) ? h('div', { className: 'dndp-note' }, [it.damage ? ('伤害 ' + it.damage + ' ' + (it.dmgType || '')) : '', it.base != null ? ('AC ' + it.base + '（敏捷上限 ' + (it.dexCap == null ? '无' : it.dexCap) + '）') : '', it.acBonus ? ('AC +' + it.acBonus) : ''].filter(Boolean).join('｜')) : null,
-      it.desc ? h('div', { className: 'dndp-note' }, it.desc) : null,
-      h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 } },
+  const packRow = (it, c) => h('div', { key: c.key, className: 'dndp-item' },
+    h('div', { className: 'dndp-main' }, h('div', { className: 'dndp-name' }, c.name), h('div', { className: 'dndp-sub' }, c.qty > 1 ? ('×' + c.qty) : '单个')),
+    h('button', { className: 'dndp-btn', disabled: busy, onClick: () => call('sheet.pack.take', { packKey: it.key, itemKey: c.key }) }, '取出'))
+  const card = (it, i) => {
+    const isContainer = !!it.container
+    const expanded = openPack === it.key
+    const head = h('button', { className: 'dndp-sec', onClick: () => (isContainer ? setOpenPack(expanded ? '' : it.key) : null) },
+      isContainer ? h('span', { className: 'dndp-chev' + (expanded ? ' open' : '') }, '▶') : null,
+      h('span', null, it.name + (it.qty > 1 ? ' ×' + it.qty : '')),
+      h('div', { className: 'dndp-sp' }),
+      h('span', { className: 'dndp-chip' }, isContainer ? ('套装 · ' + ((it.contents || []).length) + ' 件') : (KINDN[it.kind] || it.kind || '杂物')))
+    const body = []
+    if (isContainer) {
+      const contents = it.contents || []
+      body.push(h('div', { key: 'hint', className: 'dndp-note' }, contents.length ? '套装内物品（点「取出」后进入背包成为独立物品）' : '（套装已清空）'))
+      contents.forEach(c => body.push(packRow(it, c)))
+      if (contents.length) body.push(h('div', { key: 'all', style: { marginTop: 6 } }, h('button', { className: 'dndp-btn', disabled: busy, onClick: () => call('sheet.pack.take', { packKey: it.key, all: true }) }, '全部取出')))
+    } else {
+      if (it.damage || it.acBonus || it.base != null) body.push(h('div', { key: 'st', className: 'dndp-note' }, [it.damage ? ('伤害 ' + it.damage + ' ' + (it.dmgType || '')) : '', it.base != null ? ('AC ' + it.base + '（敏捷上限 ' + (it.dexCap == null ? '无' : it.dexCap) + '）') : '', it.acBonus ? ('AC +' + it.acBonus) : ''].filter(Boolean).join('｜')))
+      if (it.desc) body.push(h('div', { key: 'de', className: 'dndp-note' }, it.desc))
+      body.push(h('div', { key: 'act', style: { display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 } },
         slotsFor(it).map(p => h('button', { key: p[0], className: 'dndp-btn', disabled: busy, onClick: () => call('sheet.equip', { slot: p[0], key: it.key }) }, p[1])),
-        h('button', { key: 'rm', className: 'dndp-btn', disabled: busy, onClick: () => call('sheet.item.remove', { key: it.key }) }, '移除')))))
+        h('button', { key: 'rm', className: 'dndp-btn', disabled: busy, onClick: () => call('sheet.item.remove', { key: it.key }) }, '移除')))
+    }
+    return h('div', { key: it.key || i, className: 'dndp-sect', style: { marginTop: 6 } }, head, expanded || !isContainer ? h('div', { className: 'dndp-body' }, body) : null)
+  }
   const kids = [h('div', { key: 'h', style: { display: 'flex', alignItems: 'center', gap: 8 } }, h('b', null, '背包'), h('div', { className: 'dndp-sp' }), h('span', { className: 'dndp-chip' }, inv.length + ' 项'))]
-  kids.push(h('div', { key: 'list', style: { marginTop: 8 } }, cards.length ? cards : h('div', { className: 'dndp-note' }, '（空）')))
+  kids.push(h('div', { key: 'list', style: { marginTop: 8 } }, inv.length ? inv.map(card) : h('div', { className: 'dndp-note' }, '（空）')))
   kids.push(h('div', { key: 'l', className: 'dndp-label' }, '新增自定义物品'))
-  kids.push(h('div', { key: 'g', className: 'dndp-grid' }, Object.keys(kinds).map(k => h('button', { key: k, className: 'dndp-opt' + (kind === k ? ' sel' : ''), onClick: () => setKind(k) }, kinds[k]))))
+  kids.push(h('div', { key: 'g', className: 'dndp-grid' }, Object.keys(KINDN).map(k => h('button', { key: k, className: 'dndp-opt' + (kind === k ? ' sel' : ''), onClick: () => setKind(k) }, KINDN[k]))))
   kids.push(h('div', { key: 'f', className: 'dndp-grid', style: { marginTop: 6 } },
     h('div', { key: 'n', className: 'dndp-field', style: { marginBottom: 0 } }, h('label', null, '名称'), h('input', { className: 'dndp-input', value: name, onChange: e => setName(e.target.value) })),
     h('div', { key: 'a', className: 'dndp-field', style: { marginBottom: 0 } }, h('label', null, 'AC 加值/基础'), h('input', { className: 'dndp-input', value: acBonus, onChange: e => setAcBonus(e.target.value) })),
@@ -307,95 +325,6 @@ function Bag(props) {
     h('div', { key: 't', className: 'dndp-field', style: { marginBottom: 0 } }, h('label', null, '伤害类型'), h('input', { className: 'dndp-input', value: dmgType, onChange: e => setDmgType(e.target.value) })),
     h('div', { key: 'x', className: 'dndp-field', style: { marginBottom: 0, gridColumn: '1 / span 2' } }, h('label', null, '说明'), h('input', { className: 'dndp-input', value: desc, onChange: e => setDesc(e.target.value) }))))
   kids.push(h('div', { key: 'go', style: { marginTop: 8 } }, h('button', { className: 'dndp-btn primary', disabled: busy || !name, onClick: () => { const item = { name: name, kind: kind, desc: desc }; if (acBonus !== '') { if (kind === 'armor') item.base = Number(acBonus); else item.acBonus = Number(acBonus) } if (damage) item.damage = damage; if (dmgType) item.dmgType = dmgType; call('sheet.item.add', { item: item }).then(() => { setName(''); setAcBonus(''); setDamage(''); setDmgType(''); setDesc('') }) } }, '加入背包')))
-  if (msg) kids.push(h('div', { key: 'm', className: 'dndp-note hl' }, msg))
-  return h('div', { className: 'dndp-panel' }, kids)
-}function RulesPanel(props) {
-  const [q, setQ] = React.useState('')
-  const [book, setBook] = React.useState('')
-  const [items, setItems] = React.useState(null)
-  const [stats, setStats] = React.useState(null)
-  const [openId, setOpenId] = React.useState('')
-  const [text, setText] = React.useState('')
-  const [busy, setBusy] = React.useState(false)
-  const [msg, setMsg] = React.useState('')
-  const [recent, setRecent] = React.useState(() => { try { const v = localStorage.getItem('dnd5e.recentRules'); return v ? JSON.parse(v) : [] } catch (e) { return [] } })
-  React.useEffect(() => {
-    call('rules.stats', {}).then(r => { if (r && r.ok) setStats(r); else setMsg('规则索引不可用：' + ((r && r.error) || '') + '（在仓库运行 node tools/index-rules.mjs 生成索引）') }).catch(e => setMsg(String(e && e.message || e)))
-  }, [])
-  const remember = (term) => {
-    const next = [term].concat(recent.filter(x => x !== term)).slice(0, 6)
-    setRecent(next)
-    try { localStorage.setItem('dnd5e.recentRules', JSON.stringify(next)) } catch (e) { }
-  }
-  const terms = () => q.trim().split(/[\s,，]+/).filter(Boolean)
-  const run = async (override) => {
-    const query = typeof override === 'string' ? override : q
-    if (!query.trim()) return
-    if (override) setQ(query)
-    setBusy(true); setMsg(''); setItems(null); setOpenId(''); setText('')
-    try {
-      const args = { query: query, limit: 12 }
-      if (book) args.book = book
-      const r = await call('rules.search', args)
-      if (r && r.ok) { setItems(r.items || []); remember(query.trim()); if (!(r.items || []).length) setMsg('未命中：' + query) } else setMsg((r && r.error) || '检索失败')
-    } catch (e) { setMsg(String(e && e.message || e)) }
-    setBusy(false)
-  }
-  const open = async (id) => {
-    if (openId === id) { setOpenId(''); return }
-    setOpenId(id); setText('读取中…')
-    try {
-      const r = await call('rules.read', { id: id })
-      setText(r && r.ok ? r.entry.text : ('读取失败：' + ((r && r.error) || '')))
-    } catch (e) { setText(String(e && e.message || e)) }
-  }
-  const hl = (str) => {
-    const ts = terms().filter(t => t.length > 0)
-    if (!ts.length) return str
-    const out = []
-    let rest = String(str)
-    let guard = 0
-    while (rest.length && guard++ < 200) {
-      const lower = rest.toLowerCase()
-      let best = -1, bestLen = 0
-      for (const t of ts) { const i = lower.indexOf(t.toLowerCase()); if (i >= 0 && (best < 0 || i < best)) { best = i; bestLen = t.length } }
-      if (best < 0) { out.push(rest); break }
-      if (best > 0) out.push(rest.slice(0, best))
-      out.push(h('span', { key: 'm' + guard, className: 'dndp-hl' }, rest.slice(best, best + bestLen)))
-      rest = rest.slice(best + bestLen)
-    }
-    return out
-  }
-  const kids = []
-  kids.push(h('div', { key: 'h', style: { display: 'flex', alignItems: 'center', gap: 8 } },
-    h('b', null, '规则查找'),
-    h('div', { className: 'dndp-sp' }),
-    stats ? h('span', { className: 'dndp-chip' }, (stats.total || 0) + ' 条 / ' + ((stats.books || []).length) + ' 本书') : null))
-  kids.push(h('div', { key: 'f', style: { display: 'flex', gap: 6, marginTop: 8 } },
-    h('input', { key: 'i', className: 'dndp-input', placeholder: '关键词，空格=同时满足，如：擒抱 体型 / 火球术 伤害', value: q, onChange: e => setQ(e.target.value), onKeyDown: e => { if (e.key === 'Enter') run() } }),
-    h('button', { key: 'b', className: 'dndp-btn primary', disabled: busy, onClick: () => run() }, '检索')))
-  if (recent.length) kids.push(h('div', { key: 'rec', className: 'dndp-tags', style: { marginTop: 6 } },
-    h('span', { key: 'lb', className: 'dndp-note' }, '最近：'),
-    recent.map((r2, i) => h('button', { key: i, className: 'dndp-tag', style: { cursor: 'pointer' }, onClick: () => run(r2) }, r2))))
-  if (stats && (stats.books || []).length) {
-    const chips = [h('button', { key: 'all', className: 'dndp-tag', style: { cursor: 'pointer', borderColor: book === '' ? 'var(--dsw-alias-brand-primary)' : undefined }, onClick: () => setBook('') }, '全部')]
-    ;(stats.books || []).forEach((b, i) => chips.push(h('button', { key: i, className: 'dndp-tag', style: { cursor: 'pointer', borderColor: book === b.book ? 'var(--dsw-alias-brand-primary)' : undefined }, onClick: () => setBook(book === b.book ? '' : b.book) }, b.book + ' ' + b.entries)))
-    kids.push(h('div', { key: 'bk', className: 'dndp-tags', style: { marginTop: 6 } }, chips))
-  }
-  if (items && items.length) {
-    kids.push(h('div', { key: 'l', className: 'dndp-label' }, '结果 ' + items.length + ' 条（点击展开全文）'))
-    items.forEach((it, i) => {
-      kids.push(h('div', { key: 'r' + i, className: 'dndp-sect', style: { marginTop: 6 } },
-        h('button', { className: 'dndp-sec', onClick: () => open(it.id) },
-          h('span', { className: 'dndp-chev' + (openId === it.id ? ' open' : '') }, '▶'),
-          h('span', null, hl(it.title)),
-          h('div', { className: 'dndp-sp' }),
-          h('span', { className: 'dndp-chip' }, it.book)),
-        openId === it.id
-          ? h('div', { className: 'dndp-body' }, h('div', { style: { whiteSpace: 'pre-wrap', fontSize: 12, maxHeight: 340, overflow: 'auto' } }, text))
-          : h('div', { className: 'dndp-body' }, h('div', { className: 'dndp-note' }, hl(it.snippet)))))
-    })
-  }
   if (msg) kids.push(h('div', { key: 'm', className: 'dndp-note hl' }, msg))
   return h('div', { className: 'dndp-panel' }, kids)
 }
@@ -621,7 +550,7 @@ function Wizard(props) {
     const optBtn = (on, dis, onClick, text) => h('button', { className: 'dndp-opt' + (on ? ' sel' : ''), disabled: dis, onClick: onClick }, text)
     const grid = arr => h('div', { className: 'dndp-grid' }, arr)
     const kids = []
-    kids.push(h('div', { key: 'pk', className: 'dndp-field' }, h('label', null, '起始装备包裹（选1）'), grid(((opts && opts.packs) || []).map(p => optBtn(pack === p.key, false, () => setPack(p.key), p.name)))))
+    kids.push(h('div', { key: 'pk', className: 'dndp-field' }, h('label', null, '起始装备包裹（选 1，悬停看内含物品）'), grid(((opts && opts.packs) || []).map(p => h(Card, { key: p.key, on: pack === p.key, title: p.name, sub: ((p.items || []).length || 0) + ' 件物品', tipTitle: p.name + ' · 内含', items: (p.items || []).map(i => ({ name: i.name, desc: i.qty > 1 ? '×' + i.qty : '' })), onClick: () => setPack(p.key) })))))
     if (armorArr.length) kids.push(h('div', { key: 'ar', className: 'dndp-field' }, h('label', null, '护甲（限1）'), grid(armorArr.map(a => optBtn(armorSel === a.key, false, () => setArmorSel(armorSel === a.key ? null : a.key), a.name + ' · AC' + a.base)))))
     if (wepArr.length) {
       const kindOf = w => (w.props || []).includes('ammunition') ? 'ranged' : 'melee'

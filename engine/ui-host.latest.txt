@@ -171,8 +171,14 @@ return {
         if (pc.spellcasting) { const keys = [].concat(pc.spellcasting.cantrips || [], pc.spellcasting.spells || []); const m = smap(); out.spells = keys.map(k => m[k]).filter(Boolean) }
         out.slots = slotsForClasses(srd, pc.classes)
         const map = {}
-        ;(pc.inventory || []).forEach(it => { const key = it.key || it.name || '?'; const q = Number(it.qty) || 1; if (map[key]) map[key].qty += q; else map[key] = { key, name: it.name || key, qty: q, cat: it.cat || '', kind: it.kind || it.cat || 'gear', damage: it.damage || '', dmgType: it.dmgType || '', acBonus: Number(it.acBonus) || 0, base: (it.base === undefined ? null : it.base), dexCap: (it.dexCap === undefined ? null : it.dexCap), props: it.props || [], desc: it.desc || '', magicBonus: Number(it.magicBonus) || 0, custom: !!it.custom } })
-        out.inventory = Object.keys(map).map(k => map[k])
+        ;(pc.inventory || []).forEach(it => { const key = it.key || it.name || '?'; const q = Number(it.qty) || 1; if (map[key]) map[key].qty += q; else map[key] = { key, name: it.name || key, qty: q, cat: it.cat || '', kind: it.kind || it.cat || 'gear', contents: it.contents || null, damage: it.damage || '', dmgType: it.dmgType || '', acBonus: Number(it.acBonus) || 0, base: (it.base === undefined ? null : it.base), dexCap: (it.dexCap === undefined ? null : it.dexCap), props: it.props || [], desc: it.desc || '', magicBonus: Number(it.magicBonus) || 0, custom: !!it.custom } })
+        const defs = await loadPacks()
+        out.inventory = Object.keys(map).map(k => {
+          const it = map[k]
+          const info = packItemsOf(it, defs)
+          if (info) { it.container = true; it.kind = 'pack'; it.contents = info.items; it.sub = info.items.length + ' 件' }
+          return it
+        })
         return { ok: true, sheet: jclean(out) }
       } catch (e) { return { ok: false, error: String(e && e.message || e) } }
     }))
@@ -182,7 +188,8 @@ return {
         const races = srd.races.map(r => ({ key: r.key, name: r.name, asi: r.asi, features: resolved(r.features) }))
         const classes = srd.classes.available.map(k => { const c = srd.classes[k]; return { key: k, name: c.name, primary: c.primaryAbility, casting: c.casting ? { ability: c.casting.ability, kind: c.casting.kind } : null, skillCount: Number(c.skillCount), skillOptions: c.skillOptions, armorTags: c.armorProfs, weaponTags: c.weaponProfs, features: resolved(c.level1Features), subclass: subOptions(k) } })
         const backgrounds = Object.keys(srd.backgrounds).map(k => { const b = srd.backgrounds[k]; return { key: k, name: b.name, skills: b.skillProfs, features: b.feature ? resolved([[b.feature[0], b.feature[1]]]) : [] } })
-        return jclean({ ok: true, races, classes, backgrounds, packs: Object.keys(packName).map(k => ({ key: k, name: packName[k] })), armor: Object.keys(srd.armor).filter(k => k !== 'unarmored' && k !== 'shieldBonus').map(k => ({ key: k, name: armorName[k] || k, base: srd.armor[k].base, cat: srd.armor[k].category })), weapons: Object.keys(srd.weapons).map(k => ({ key: k, name: srd.weapons[k].name, damage: srd.weapons[k].damage, dmgType: srd.weapons[k].dmgType, cat: srd.weapons[k].category, props: srd.weapons[k].props })) })
+        const pk = await loadPacks()
+        return jclean({ ok: true, races, classes, backgrounds, packs: Object.keys(packName).map(k => ({ key: k, name: packName[k], items: (pk[k] && pk[k].items) || [] })), armor: Object.keys(srd.armor).filter(k => k !== 'unarmored' && k !== 'shieldBonus').map(k => ({ key: k, name: armorName[k] || k, base: srd.armor[k].base, cat: srd.armor[k].category })), weapons: Object.keys(srd.weapons).map(k => ({ key: k, name: srd.weapons[k].name, damage: srd.weapons[k].damage, dmgType: srd.weapons[k].dmgType, cat: srd.weapons[k].category, props: srd.weapons[k].props })) })
       } catch (e) { return { ok: false, error: String(e && e.message || e) } }
     }))
     unreg.push(harness.handle('build.caster', async ({ cls }) => {
@@ -225,11 +232,13 @@ return {
         const maxHp = cls ? (Number(cls.hitDieBase) + mods.con) : 0
         const casting = (cls && cls.casting && spec.cls !== 'paladin' && spec.cls !== 'ranger') ? { ability: cls.casting.ability, dc: 8 + pb + mods[cls.casting.ability], attackBonus: pb + mods[cls.casting.ability], cantrips: (spec.cantrips || []).slice(), spells: (spec.spells || []).slice(), note: 'built by wizard' } : null
         const inv = []
-        const addInv = (key, name, qty) => { if (key) inv.push({ key, name: name || key, qty, cat: 'gear' }) }
-        addInv(spec.pack, packName[spec.pack], 1)
-        if (spec.armor) addInv(spec.armor, armorName[spec.armor], 1)
+        const addInv = (key, name, qty, kind) => { if (key) inv.push({ key, name: name || key, qty, cat: kind || 'gear', kind: kind || 'gear' }) }
+        addInv(spec.pack, packName[spec.pack], 1, 'pack')
+        const pkDefs = await loadPacks()
+        if (spec.pack && pkDefs[spec.pack] && inv.length) inv[inv.length - 1].contents = pkDefs[spec.pack].items.map(i => ({ key: i.key, name: i.name, qty: i.qty }))
+        if (spec.armor) addInv(spec.armor, armorName[spec.armor], 1, 'armor')
         const wname = (k) => (srd.weapons[k] && srd.weapons[k].name) || k
-        ;(spec.weapons || []).forEach(w => addInv(w, wname(w), 1))
+        ;(spec.weapons || []).forEach(w => { const wd = srd.weapons[w] || {}; addInv(w, wname(w), 1, 'weapon'); const last = inv[inv.length - 1]; if (last) { last.damage = wd.damage || ''; last.dmgType = wd.dmgType || ''; last.props = wd.props || [] } })
         const id = 'pc-' + Date.now().toString(36)
         const pc = { schema: 'dnd5e.character.v1', id, name: spec.name, player: spec.player || '', level: 1, xp: 0, alignment: null, race: race ? race.key : spec.race, classes: cls ? [{ class: cls.key, level: 1 }] : [], background: bg ? bg.key : spec.bg, abilityMethod: 'point-buy', abilities: finalAb, savingThrowProfs: cls ? cls.saveProfs.slice() : [], skillProfs: (spec.skills || []).slice(), skillExpertise: [], armor: spec.armor ? { key: spec.armor, shield: false } : null, weapons: (spec.weapons || []).slice(), otherProfs: (bg && bg.extraProfs) ? bg.extraProfs.slice() : [], features: { race: race ? race.features.map(f => f[0]) : [], class: cls ? cls.level1Features.map(f => f[0]) : [], background: bg && bg.feature ? [bg.feature[0]] : [] }, subclass, choices: {}, spellcasting: casting, hp: { current: maxHp, max: maxHp, temp: 0, hitDiceTotal: cls ? ('1' + cls.hitDie) : '', hitDiceUsed: 0 }, resources: {}, inventory: inv, currency: { gp: 0, sp: 0, cp: 0 }, conditions: [], inspiration: false, notes: spec.notes || '', meta: { schemaVersion: 'dnd5e.character.v1', campaign: null, createdAt: nowIso(), updatedAt: nowIso() } }
         let saved = false, saveError = ''
@@ -449,6 +458,55 @@ return {
       const start = Math.max(0, i - w)
       return (start > 0 ? '…' : '') + String(text).slice(start, i + w * 2).replace(/\s+/g, ' ') + '…'
     }
+
+    // —— 起始套装明细（rules/packs.json）：套装是容器，取出后才成为独立物品 ——
+    let packDefs = null
+    const loadPacks = async () => {
+      if (packDefs) return packDefs
+      try { packDefs = JSON.parse(await fsRead(ROOT + '/rules/packs.json')).packs || {} } catch (e) { packDefs = {} }
+      return packDefs
+    }
+    const packItemsOf = (it, defs) => {
+      const def = defs[it && it.key]
+      if (!def) return null
+      const items = Array.isArray(it.contents) ? it.contents : (def.items || [])
+      return { name: def.name || it.name || it.key, items: items }
+    }
+
+    unreg.push(harness.handle('sheet.pack.take', async ({ json }) => {
+      try {
+        const spec = JSON.parse(json)
+        const safe = String(spec.id).replace(/[^A-Za-z0-9._-]/g, '')
+        const pc = overlay.get(String(spec.id)) ? overlay.get(String(spec.id)) : JSON.parse(await fsRead(CHAR_DIR + '/' + safe + '.json'))
+        const defs = await loadPacks()
+        const def = defs[spec.packKey]
+        if (!def) return { ok: false, error: '未知套装：' + spec.packKey }
+        pc.inventory = pc.inventory || []
+        const pack = pc.inventory.find(x => x.key === spec.packKey)
+        if (!pack) return { ok: false, error: '背包里没有该套装' }
+        let contents = Array.isArray(pack.contents) ? pack.contents.map(c => ({ key: c.key, name: c.name, qty: c.qty })) : def.items.map(i => ({ key: i.key, name: i.name, qty: i.qty }))
+        const wanted = spec.all ? contents.map(c => c.key) : [spec.itemKey]
+        const taken = []
+        for (const key of wanted) {
+          const idx = contents.findIndex(c => c.key === key)
+          if (idx < 0) continue
+          const c = contents[idx]
+          const q = Math.max(1, Math.min(Number(spec.qty) || c.qty, c.qty))
+          c.qty -= q
+          if (c.qty <= 0) contents.splice(idx, 1)
+          const existing = pc.inventory.find(x => x.key === c.key)
+          if (existing) existing.qty = (Number(existing.qty) || 1) + q
+          else pc.inventory.push({ key: c.key, name: c.name, qty: q, cat: 'gear', kind: 'gear', fromPack: spec.packKey })
+          taken.push(c.name + (q > 1 ? '×' + q : ''))
+        }
+        pack.contents = contents
+        pack.kind = 'pack'
+        pc.meta = pc.meta || {}
+        pc.meta.updatedAt = nowIso()
+        const r = await persist(pc)
+        return { ok: true, saved: !!r.ok, saveError: r.error || '', summary: taken.length ? ('取出：' + taken.join('、')) : '套装里没有可取的物品', character: JSON.stringify(pc) }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
 
     unreg.push(harness.handle('rules.stats', async () => {
       try {

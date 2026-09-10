@@ -20,7 +20,7 @@ const API_PATH = '/dnd5e/api'
 const OPS = [
   'party.list', 'party.sheet', 'build.options', 'build.caster', 'build.create',
   'levelset.info', 'levelset.apply', 'sheet.equip', 'sheet.item.add', 'sheet.item.remove',
-  'sheet.condition.set', 'sheet.patch', 'multiclass.add', 'rules.stats', 'rules.search', 'rules.read', 'ui.source',
+  'sheet.condition.set', 'sheet.pack.take', 'sheet.patch', 'multiclass.add', 'rules.stats', 'rules.search', 'rules.read', 'ui.source',
 ]
 
 function sendJson(res, status, payload) {
@@ -45,11 +45,15 @@ export function apply(ctx, config = {}) {
 
   const rec = {}
   let loaded = false
+  let loadedAt = 0
   let innerDispose = null
 
   const ensure = () => {
-    if (loaded) return
     if (!fsSync.existsSync(hostSrc)) throw new Error('inner host source not found: ' + hostSrc)
+    const mtime = fsSync.statSync(hostSrc).mtimeMs
+    if (loaded && mtime === loadedAt) return
+    if (loaded && typeof innerDispose === 'function') { try { innerDispose() } catch (e) { } ; innerDispose = null }
+    loaded = false
     let src = fsSync.readFileSync(hostSrc, 'utf8')
     if (src.charCodeAt(0) === 0xfeff) src = src.slice(1)
     const recHarness = { handle: (n, f) => { rec[n] = f; return () => { } } }
@@ -59,6 +63,7 @@ export function apply(ctx, config = {}) {
     const d = plugin.apply(ctx)
     if (typeof d === 'function') innerDispose = d
     loaded = true
+    loadedAt = mtime
   }
 
   ctx.logger?.info?.('[dsh-5ednd] repo=' + repoRoot + ' api=' + API_PATH + ' index=' + fsSync.existsSync(path.join(repoRoot, 'data', 'rules-index', 'manifest.json')))
