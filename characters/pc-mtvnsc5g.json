@@ -1,0 +1,194 @@
+{
+  "schema": "dnd5e.character.v1",
+  "id": "pc-mtvnsc5g",
+  "name": "111111111",
+  "player": "",
+  "level": 1,
+  "xp": 0,
+  "alignment": null,
+  "race": "elf/high",
+  "classes": [
+    {
+      "level": 1
+    }
+  ],
+  "abilityMethod": "point-buy",
+  "abilities": {
+    "str": 8,
+    "dex": 10,
+    "con": 8,
+    "int": 16,
+    "wis": 15,
+    "cha": 15
+  },
+  "savingThrowProfs": [
+    "con",
+    "cha"
+  ],
+  "skillProfs": [
+    "religion",
+    "intimidation",
+    "deception"
+  ],
+  "skillExpertise": [],
+  "armor": null,
+  "weapons": [
+    "sling",
+    "dagger"
+  ],
+  "otherProfs": [
+    "language(2)"
+  ],
+  "features": {
+    "race": [
+      "darkvision60",
+      "keenSenses",
+      "feyAncestry",
+      "trance",
+      "cantrip"
+    ],
+    "class": [
+      "spellcasting",
+      "sorcerousOrigin"
+    ],
+    "background": [
+      "shelterOfTheFaithful"
+    ]
+  },
+  "subclass": {
+    "key": "draconic",
+    "name": "龙裔血脉",
+    "picks": {
+      "dragon": "white"
+    }
+  },
+  "choices": {},
+  "spellcasting": {
+    "ability": "cha",
+    "dc": 12,
+    "attackBonus": 4,
+    "cantrips": [
+      "bladeWard",
+      "light"
+    ],
+    "spells": [
+      "burningHands",
+      "comprehendLanguages"
+    ],
+    "note": "built by wizard"
+  },
+  "hp": {
+    "current": 5,
+    "max": 5,
+    "temp": 0,
+    "hitDiceTotal": "1d6",
+    "hitDiceUsed": 0
+  },
+  "resources": {},
+  "inventory": [
+    {
+      "key": "diplomatsPack",
+      "name": "外交官套装",
+      "qty": 1,
+      "cat": "pack",
+      "kind": "pack",
+      "contents": [
+        {
+          "key": "箱子",
+          "name": "箱子",
+          "qty": 1
+        },
+        {
+          "key": "高档服装",
+          "name": "高档服装",
+          "qty": 1
+        },
+        {
+          "key": "墨水",
+          "name": "墨水",
+          "qty": 1
+        },
+        {
+          "key": "墨水笔",
+          "name": "墨水笔",
+          "qty": 5
+        },
+        {
+          "key": "油灯",
+          "name": "油灯",
+          "qty": 1
+        },
+        {
+          "key": "地图或卷轴匣",
+          "name": "地图或卷轴匣",
+          "qty": 2
+        },
+        {
+          "key": "燃油",
+          "name": "燃油",
+          "qty": 4
+        },
+        {
+          "key": "纸张",
+          "name": "纸张",
+          "qty": 5
+        },
+        {
+          "key": "羊皮纸",
+          "name": "羊皮纸",
+          "qty": 5
+        },
+        {
+          "key": "香水",
+          "name": "香水",
+          "qty": 1
+        },
+        {
+          "key": "火绒盒",
+          "name": "火绒盒",
+          "qty": 1
+        }
+      ]
+    },
+    {
+      "key": "sling",
+      "name": "投石索",
+      "qty": 1,
+      "cat": "weapon",
+      "kind": "weapon",
+      "damage": "1d4",
+      "dmgType": "bludgeoning",
+      "props": [
+        "ammunition"
+      ]
+    },
+    {
+      "key": "dagger",
+      "name": "匕首",
+      "qty": 1,
+      "cat": "weapon",
+      "kind": "weapon",
+      "damage": "1d4",
+      "dmgType": "piercing",
+      "props": [
+        "finesse",
+        "light",
+        "thrown(20/60)"
+      ]
+    }
+  ],
+  "currency": {
+    "gp": 0,
+    "sp": 0,
+    "cp": 0
+  },
+  "conditions": [],
+  "inspiration": false,
+  "notes": "",
+  "meta": {
+    "schemaVersion": "dnd5e.character.v1",
+    "campaign": null,
+    "createdAt": "2026-09-10T15:05:02.596Z",
+    "updatedAt": "2026-09-10T15:05:02.596Z"
+  }
+}

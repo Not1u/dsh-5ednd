@@ -109,6 +109,7 @@ const incCost = v => PBCOST[v + 1] - PBCOST[v]
 const fmt = n => (n > 0 ? '+' : '') + n
 const skName = s => SK[s] || s
 const LVNAME = ['戏法', '1 环', '2 环', '3 环', '4 环', '5 环', '6 环', '7 环', '8 环', '9 环']
+const KINDN = { armor: '护甲', shield: '盾牌', weapon: '武器', gear: '杂物', pack: '套装' }
 const spellItems = (s) => [{ name: '学派', desc: s.school }, { name: '施法时间', desc: s.time }, { name: '距离', desc: s.range }, { name: '持续', desc: s.duration }, { name: '标记', desc: [s.conc ? '专注' : '', s.ritual ? '仪式' : ''].filter(Boolean).join(' ') || '—' }, { name: '效果', desc: s.fx }]
 let __tip = null
 function tipNode() { if (!__tip) { const d = document.createElement('div'); d.className = 'dndp-tipf'; d.style.display = 'none'; document.body.appendChild(d); __tip = d } return __tip }
@@ -329,6 +330,17 @@ function Bag(props) {
   return h('div', { className: 'dndp-panel' }, kids)
 }
 
+class Boundary extends React.Component {
+  constructor(props) { super(props); this.state = { err: '' } }
+  static getDerivedStateFromError(e) { return { err: String((e && e.message) || e) } }
+  componentDidCatch(e) { try { console.error('[dnd-5ednd] render error:', e) } catch (x) { } }
+  render() {
+    if (this.state.err) {
+      return h('div', { className: 'dndp-err' }, '界面渲染出错（已隔离，不影响其它页签）：' + this.state.err)
+    }
+    return this.props.children
+  }
+}
 function RulesPanel(props) {
   const [q, setQ] = React.useState('')
   const [book, setBook] = React.useState('')
@@ -676,8 +688,8 @@ function PartyView() {
   function refresh() { setBusy(true); setErr(''); call('party.list', {}).then(r => { if (r && r.ok) setList(r.items); else setErr((r && r.error) || 'list failed') }).catch(e => setErr(String(e && e.message || e))).then(() => setBusy(false)) }
   function open(id) { setLoading(true); setErr(''); call('party.sheet', { id }).then(r => { if (r && r.ok) setSel(r.sheet); else setErr((r && r.error) || 'sheet failed') }).catch(e => setErr(String(e && e.message || e))).then(() => setLoading(false)) }
   React.useEffect(() => { refresh() }, [])
-  if (mode === 'build') return h(Wizard, { onDone: () => { setMode('list'); refresh() }, onBack: () => setMode('list') })
-  if (sel) return h('div', { className: 'dndp-root' }, h('div', { className: 'dndp-header' }, h('span', { className: 'dndp-ic' }, '⚔'), h('span', null, sel.name), h('div', { className: 'dndp-sp' }), h(XpWidget, { s: sel }), h('button', { className: 'dndp-btn', onClick: () => setSel(null) }, '返回列表')), h('div', { className: 'dndp-scroll' }, loading ? h('div', { className: 'dndp-empty' }, '加载中…') : h(Detail, { s: sel, onReload: () => { open(sel.id); refresh() } })))
+  if (mode === 'build') return h(Boundary, null, h(Wizard, { onDone: () => { setMode('list'); refresh() }, onBack: () => setMode('list') }))
+  if (sel) return h('div', { className: 'dndp-root' }, h('div', { className: 'dndp-header' }, h('span', { className: 'dndp-ic' }, '⚔'), h('span', null, sel.name), h('div', { className: 'dndp-sp' }), h(XpWidget, { s: sel }), h('button', { className: 'dndp-btn', onClick: () => setSel(null) }, '返回列表')), h('div', { className: 'dndp-scroll' }, loading ? h('div', { className: 'dndp-empty' }, '加载中…') : h(Boundary, null, h(Detail, { s: sel, onReload: () => { open(sel.id); refresh() } }))))
   const rows = []
   if (busy || loading) rows.push(h('div', { key: 'b', className: 'dndp-empty' }, '加载中…'))
   if (err) rows.push(h('div', { key: 'e', className: 'dndp-err' }, err))
