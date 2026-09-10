@@ -12,6 +12,7 @@
     "index:rules": "node tools/index-rules.mjs",
     "index:rules:all": "node tools/index-rules.mjs --all",
     "find": "node tools/find-rules.mjs",
+    "build:adapter": "node tools/build-adapter.mjs",
     "test": "node tools/test-host.mjs && node tools/test-equip.mjs",
     "migrate:gear": "node tools/migrate-gear.mjs"
   },

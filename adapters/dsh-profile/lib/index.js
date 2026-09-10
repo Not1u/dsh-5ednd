@@ -1,68 +1,95 @@
 // adapters/dsh-profile/lib/index.js — profile 常驻插件（host 半）
 //
-// 职责：把仓库 core/ 的能力注册成常驻工具（重启后仍在），并（在宿主提供时）
-// 暴露给客户端的 RPC 服务。所有业务逻辑都在仓库 core/ 与 tools/ 中，本文件只做适配。
+// 设计：本文件只是「薄桥」。
+//   1) 用 ctx.webServer.register 暴露同源 HTTP 接口 /dnd5e/api（{op, args} → {ok, value}）；
+//   2) op 的真实实现在仓库 engine/ui-host.latest.txt（与动态插件共用同一份源码），
+//      首次调用时读取并用 new Function 载入（传入 DND5E_ROOT 使路径可移植）。
+// 这样：常驻插件与动态插件共享一份业务逻辑，改逻辑只需改仓库文件 + 重启（或重新构建）。
 import path from 'node:path'
 import fsSync from 'node:fs'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 
 export const name = 'dsh-5ednd'
-export const inject = ['tools']
+export const inject = ['webServer']
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
+const REPO_ROOT = path.resolve(HERE, '..', '..', '..')
+const API_PATH = '/dnd5e/api'
 
-function resolveRepoRoot(config) {
-  if (config && typeof config.dataRoot === 'string' && config.dataRoot.length) return config.dataRoot.replace(/[\\/]+$/, '')
-  if (process.env.DND5E_DATA_ROOT) return process.env.DND5E_DATA_ROOT.replace(/[\\/]+$/, '')
-  // adapters/dsh-profile/lib → 仓库根
-  return path.resolve(HERE, '..', '..', '..')
-}
+const OPS = [
+  'party.list', 'party.sheet', 'build.options', 'build.caster', 'build.create',
+  'levelset.info', 'levelset.apply', 'sheet.equip', 'sheet.item.add', 'sheet.item.remove',
+  'sheet.condition.set', 'sheet.patch', 'multiclass.add', 'rules.stats', 'rules.search', 'rules.read', 'ui.source',
+]
 
-const obj = (props, required = []) => {
-  const out = { type: 'object', properties: {}, required }
-  for (const k of Object.keys(props || {})) out.properties[k] = props[k]
-  return out
+function sendJson(res, status, payload) {
+  const text = JSON.stringify(payload)
+  res.statusCode = status
+  res.setHeader('content-type', 'application/json; charset=utf-8')
+  res.setHeader('cache-control', 'no-store')
+  res.end(text)
 }
-const textRender = (args, value) => [{ type: 'text', text: String((value && value.summary) || '') }]
 
 export function apply(ctx, config = {}) {
-  const repoRoot = resolveRepoRoot(config)
-  const indexDir = (config && config.indexDir) || path.join(repoRoot, 'data', 'rules-index')
-  const register = (tool) => ctx.tools.register(tool)
+  const repoRoot = (config && typeof config.dataRoot === 'string' && config.dataRoot.length)
+    ? config.dataRoot.replace(/[\\/]+$/, '')
+    : (process.env.DND5E_DATA_ROOT ? process.env.DND5E_DATA_ROOT.replace(/[\\/]+$/, '') : REPO_ROOT)
+  const hostSrc = path.join(repoRoot, 'engine', 'ui-host.latest.txt')
 
-  const loadFinder = async () => import(pathToFileURL(path.join(repoRoot, 'core', 'rules-finder.mjs')).href)
-  const loadFs = async () => import(pathToFileURL(path.join(repoRoot, 'core', 'characters.mjs')).href).catch(() => null)
+  const rec = {}
+  let loaded = false
+  let innerDispose = null
 
-  ctx.logger?.info?.('[dsh-5ednd] repo=' + repoRoot + ' index=' + indexDir + ' indexExists=' + fsSync.existsSync(path.join(indexDir, 'manifest.json')))
+  const ensure = () => {
+    if (loaded) return
+    if (!fsSync.existsSync(hostSrc)) throw new Error('inner host source not found: ' + hostSrc)
+    let src = fsSync.readFileSync(hostSrc, 'utf8')
+    if (src.charCodeAt(0) === 0xfeff) src = src.slice(1)
+    const recHarness = { handle: (n, f) => { rec[n] = f; return () => { } } }
+    const factory = new Function('harness', 'ctx', 'console', 'DND5E_ROOT', src)
+    const plugin = factory(recHarness, ctx, console, repoRoot)
+    if (!plugin || typeof plugin.apply !== 'function') throw new Error('inner host shape invalid')
+    const d = plugin.apply(ctx)
+    if (typeof d === 'function') innerDispose = d
+    loaded = true
+  }
 
-  register({
-    name: 'dnd_search_rules',
-    description: 'Search the local D&D 5e rulebook index; returns matching sections with snippets.',
-    parameters: obj({ query: { type: 'string' }, book: { type: 'string' }, limit: { type: 'number' } }, ['query']),
-    output: { schema: obj({ ok: { type: 'boolean' }, summary: { type: 'string' } }, ['ok', 'summary']), render: textRender },
-    async execute(args) {
-      try {
-        const f = await loadFinder()
-        const hits = f.search(indexDir, args.query, { limit: Number(args.limit) || 8, book: args.book || undefined })
-        if (!hits.length) return { ok: true, summary: '未命中（索引目录：' + indexDir + '）' }
-        return { ok: true, summary: hits.map((h, i) => (i + 1) + '. [' + h.book + '] ' + h.title + ' (id ' + h.id + ')\n   ' + h.snippet.replace(/\s+/g, ' ').slice(0, 180)).join('\n') }
-      } catch (e) { return { ok: false, summary: 'search failed: ' + (e && e.message || e) } }
+  ctx.logger?.info?.('[dsh-5ednd] repo=' + repoRoot + ' api=' + API_PATH + ' index=' + fsSync.existsSync(path.join(repoRoot, 'data', 'rules-index', 'manifest.json')))
+
+  ctx.effect(() => ctx.webServer.register({
+    kind: 'exact',
+    path: API_PATH,
+    handler: (req, res) => {
+      if (req.method !== 'POST') return sendJson(res, 405, { ok: false, error: 'POST only' })
+      let body = ''
+      let tooLarge = false
+      req.on('data', (chunk) => {
+        body += chunk
+        if (body.length > 8 * 1024 * 1024) { tooLarge = true; req.destroy() }
+      })
+      req.on('end', async () => {
+        if (tooLarge) return sendJson(res, 413, { ok: false, error: 'payload too large' })
+        let op = '', args = null
+        try {
+          const parsed = JSON.parse(body || '{}')
+          op = String(parsed.op || '')
+          args = parsed.args === undefined ? null : parsed.args
+        } catch (e) { return sendJson(res, 400, { ok: false, error: 'bad json: ' + (e && e.message || e) }) }
+        if (!op) return sendJson(res, 400, { ok: false, error: 'op required' })
+        try {
+          ensure()
+          const fn = rec[op]
+          if (typeof fn !== 'function') return sendJson(res, 200, { ok: false, error: 'unknown op: ' + op })
+          const value = await fn(args || {})
+          return sendJson(res, 200, { ok: true, value: value === undefined ? null : value })
+        } catch (e) {
+          return sendJson(res, 200, { ok: false, error: String(e && e.message || e) })
+        }
+      })
     },
-  })
+  }), 'dsh-5ednd: api route')
 
-  register({
-    name: 'dnd_read_rule',
-    description: 'Read a full rulebook section by id from dnd_search_rules.',
-    parameters: obj({ id: { type: 'string' } }, ['id']),
-    output: { schema: obj({ ok: { type: 'boolean' }, summary: { type: 'string' } }, ['ok', 'summary']), render: textRender },
-    async execute(args) {
-      try {
-        const f = await loadFinder()
-        const e = f.read(indexDir, args.id)
-        return e ? { ok: true, summary: '【' + e.book + '】' + e.title + '\n' + e.text } : { ok: false, summary: '未找到 ' + args.id }
-      } catch (e) { return { ok: false, summary: 'read failed: ' + (e && e.message || e) } }
-    },
-  })
+  return () => { if (typeof innerDispose === 'function') { try { innerDispose() } catch (e) { } } }
 }
 
 export default { name, inject, apply }
