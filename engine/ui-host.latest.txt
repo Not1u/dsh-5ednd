@@ -18,7 +18,7 @@ const FULL = ['bard', 'cleric', 'druid', 'sorcerer', 'wizard']
 const HALF = ['paladin', 'ranger']
 const KNOWN_BY_LEVEL = { bard: [4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 15, 16, 18, 19, 19, 20, 22, 22, 22], sorcerer: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 12, 13, 13, 14, 14, 15, 15, 15, 15], warlock: [2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 11, 11, 12, 12, 13, 13, 14, 14, 15, 15] }
 const PRIMARY = { barbarian: 'str', bard: 'cha', cleric: 'wis', druid: 'wis', fighter: 'str', monk: 'dex', paladin: 'str', ranger: 'dex', rogue: 'dex', sorcerer: 'cha', warlock: 'cha', wizard: 'int' }
-const packName = { burglarsPack: '窃贼套装', diplomatsPack: '外交官套装', dungeoneersPack: '地城探索套装', entertainersPack: '艺人套装', explorersPack: '探险家套装', monksPack: '武僧套装', priestsPack: '祭司套装', scholarsPack: '学者套装' }
+const packName = { burglarsPack: '窃贼套装', diplomatsPack: '外交官套装', dungeoneersPack: '地城探索套装', entertainersPack: '艺人套装', explorersPack: '探险家套装', priestsPack: '祭司套装', scholarsPack: '学者套装' }
 const armorName = { unarmored: '无甲', leather: '皮甲', studdedLeather: '镶钉皮甲', hide: '生皮甲', chainShirt: '锁子衫', scaleMail: '鳞甲', breastplate: '胸甲', halfPlate: '半身板甲', ringMail: '环甲', chainMail: '链甲', splint: '条板甲', plate: '全身板甲' }
 const CONDITIONS = [
   { key: 'blinded', name: '目盲', desc: '看不见，自身攻击有劣势，敌人攻击你有优势。' },

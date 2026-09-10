@@ -329,6 +329,97 @@ function Bag(props) {
   return h('div', { className: 'dndp-panel' }, kids)
 }
 
+function RulesPanel(props) {
+  const [q, setQ] = React.useState('')
+  const [book, setBook] = React.useState('')
+  const [items, setItems] = React.useState(null)
+  const [stats, setStats] = React.useState(null)
+  const [openId, setOpenId] = React.useState('')
+  const [text, setText] = React.useState('')
+  const [busy, setBusy] = React.useState(false)
+  const [msg, setMsg] = React.useState('')
+  const [recent, setRecent] = React.useState(() => { try { const v = localStorage.getItem('dnd5e.recentRules'); return v ? JSON.parse(v) : [] } catch (e) { return [] } })
+  React.useEffect(() => {
+    call('rules.stats', {}).then(r => { if (r && r.ok) setStats(r); else setMsg('规则索引不可用：' + ((r && r.error) || '') + '（在仓库运行 node tools/index-rules.mjs 生成索引）') }).catch(e => setMsg(String(e && e.message || e)))
+  }, [])
+  const remember = (term) => {
+    const next = [term].concat(recent.filter(x => x !== term)).slice(0, 6)
+    setRecent(next)
+    try { localStorage.setItem('dnd5e.recentRules', JSON.stringify(next)) } catch (e) { }
+  }
+  const terms = () => q.trim().split(/[\s,，]+/).filter(Boolean)
+  const run = async (override) => {
+    const query = typeof override === 'string' ? override : q
+    if (!query.trim()) return
+    if (override) setQ(query)
+    setBusy(true); setMsg(''); setItems(null); setOpenId(''); setText('')
+    try {
+      const args = { query: query, limit: 12 }
+      if (book) args.book = book
+      const r = await call('rules.search', args)
+      if (r && r.ok) { setItems(r.items || []); remember(query.trim()); if (!(r.items || []).length) setMsg('未命中：' + query) } else setMsg((r && r.error) || '检索失败')
+    } catch (e) { setMsg(String(e && e.message || e)) }
+    setBusy(false)
+  }
+  const open = async (id) => {
+    if (openId === id) { setOpenId(''); return }
+    setOpenId(id); setText('读取中…')
+    try {
+      const r = await call('rules.read', { id: id })
+      setText(r && r.ok ? r.entry.text : ('读取失败：' + ((r && r.error) || '')))
+    } catch (e) { setText(String(e && e.message || e)) }
+  }
+  const hl = (str) => {
+    const ts = terms().filter(t => t.length > 0)
+    if (!ts.length) return str
+    const out = []
+    let rest = String(str)
+    let guard = 0
+    while (rest.length && guard++ < 200) {
+      const lower = rest.toLowerCase()
+      let best = -1, bestLen = 0
+      for (const t of ts) { const i = lower.indexOf(t.toLowerCase()); if (i >= 0 && (best < 0 || i < best)) { best = i; bestLen = t.length } }
+      if (best < 0) { out.push(rest); break }
+      if (best > 0) out.push(rest.slice(0, best))
+      out.push(h('span', { key: 'm' + guard, className: 'dndp-hl' }, rest.slice(best, best + bestLen)))
+      rest = rest.slice(best + bestLen)
+    }
+    return out
+  }
+  const kids = []
+  kids.push(h('div', { key: 'h', style: { display: 'flex', alignItems: 'center', gap: 8 } },
+    h('b', null, '规则查找'),
+    h('div', { className: 'dndp-sp' }),
+    stats ? h('span', { className: 'dndp-chip' }, (stats.total || 0) + ' 条 / ' + ((stats.books || []).length) + ' 本书') : null))
+  kids.push(h('div', { key: 'f', style: { display: 'flex', gap: 6, marginTop: 8 } },
+    h('input', { key: 'i', className: 'dndp-input', placeholder: '关键词，空格=同时满足，如：擒抱 体型 / 火球术 伤害', value: q, onChange: e => setQ(e.target.value), onKeyDown: e => { if (e.key === 'Enter') run() } }),
+    h('button', { key: 'b', className: 'dndp-btn primary', disabled: busy, onClick: () => run() }, '检索')))
+  if (recent.length) kids.push(h('div', { key: 'rec', className: 'dndp-tags', style: { marginTop: 6 } },
+    h('span', { key: 'lb', className: 'dndp-note' }, '最近：'),
+    recent.map((r2, i) => h('button', { key: i, className: 'dndp-tag', style: { cursor: 'pointer' }, onClick: () => run(r2) }, r2))))
+  if (stats && (stats.books || []).length) {
+    const chips = [h('button', { key: 'all', className: 'dndp-tag', style: { cursor: 'pointer', borderColor: book === '' ? 'var(--dsw-alias-brand-primary)' : undefined }, onClick: () => setBook('') }, '全部')]
+    ;(stats.books || []).forEach((b, i) => chips.push(h('button', { key: i, className: 'dndp-tag', style: { cursor: 'pointer', borderColor: book === b.book ? 'var(--dsw-alias-brand-primary)' : undefined }, onClick: () => setBook(book === b.book ? '' : b.book) }, b.book + ' ' + b.entries)))
+    kids.push(h('div', { key: 'bk', className: 'dndp-tags', style: { marginTop: 6 } }, chips))
+  }
+  if (items && items.length) {
+    kids.push(h('div', { key: 'l', className: 'dndp-label' }, '结果 ' + items.length + ' 条（点击展开全文）'))
+    items.forEach((it, i) => {
+      kids.push(h('div', { key: 'r' + i, className: 'dndp-sect', style: { marginTop: 6 } },
+        h('button', { className: 'dndp-sec', onClick: () => open(it.id) },
+          h('span', { className: 'dndp-chev' + (openId === it.id ? ' open' : '') }, '▶'),
+          h('span', null, hl(it.title)),
+          h('div', { className: 'dndp-sp' }),
+          h('span', { className: 'dndp-chip' }, it.book)),
+        openId === it.id
+          ? h('div', { className: 'dndp-body' }, h('div', { style: { whiteSpace: 'pre-wrap', fontSize: 12, maxHeight: 340, overflow: 'auto' } }, text))
+          : h('div', { className: 'dndp-body' }, h('div', { className: 'dndp-note' }, hl(it.snippet)))))
+    })
+  }
+  if (msg) kids.push(h('div', { key: 'm', className: 'dndp-note hl' }, msg))
+  return h('div', { className: 'dndp-panel' }, kids)
+}
+
 function Multiclass(props) {
   const s = props.s
   const [cls, setCls] = React.useState('')
