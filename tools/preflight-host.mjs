@@ -53,7 +53,7 @@ if (!ss.ok || !((ss.value || {}).items || []).length) { console.log('FAIL: rules
 
 const sheet = await callApi('party.sheet', { id: 'pc-turiel-mistveil' })
 const sh = JSON.parse(sheet.body)
-console.log('party.sheet -> ok=' + sh.ok + ' AC=' + (sh.value && sh.value.ac) + ' Lv=' + (sh.value && sh.value.level))
+console.log('party.sheet -> ok=' + sh.ok + ' sheetOk=' + (sh.value && sh.value.ok) + ' AC=' + (((sh.value || {}).sheet) || {}).ac + ' Lv=' + (((sh.value || {}).sheet) || {}).level)
 if (!sh.ok) { console.log('FAIL: party.sheet'); process.exit(1) }
 
 const bad = await callApi('nope', {})
