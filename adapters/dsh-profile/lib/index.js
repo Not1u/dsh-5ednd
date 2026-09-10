@@ -10,7 +10,7 @@ import fsSync from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 export const name = 'dsh-5ednd'
-export const inject = ['webServer']
+export const inject = ['webServer', 'fs']
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = path.resolve(HERE, '..', '..', '..')
