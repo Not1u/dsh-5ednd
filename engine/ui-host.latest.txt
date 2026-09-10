@@ -1,10 +1,11 @@
 console.log('DND-UI host starting (v16)')
-const CHAR_DIR = 'E:/HarnessTarvern/dnd5e/characters'
-const RULES_PATH = 'E:/HarnessTarvern/dnd5e/rules/dnd5e-srd.json'
-const SPELLS_PATH = 'E:/HarnessTarvern/dnd5e/rules/spells.json'
-const FEATURES_PATH = 'E:/HarnessTarvern/dnd5e/rules/features.json'
-const SUB_PATH = 'E:/HarnessTarvern/dnd5e/rules/subclasses.json'
-const FEATS_PATH = 'E:/HarnessTarvern/dnd5e/rules/feats.json'
+const ROOT = (typeof DND5E_ROOT === 'string' && DND5E_ROOT.length) ? DND5E_ROOT.replace(/[\\/]+$/, '') : 'E:/HarnessTarvern/dnd5e'
+const CHAR_DIR = ROOT + '/characters'
+const RULES_PATH = ROOT + '/rules/dnd5e-srd.json'
+const SPELLS_PATH = ROOT + '/rules/spells.json'
+const FEATURES_PATH = ROOT + '/rules/features.json'
+const SUB_PATH = ROOT + '/rules/subclasses.json'
+const FEATS_PATH = ROOT + '/rules/feats.json'
 const AB = ['str', 'dex', 'con', 'int', 'wis', 'cha']
 const ABF = { str: '力量', dex: '敏捷', con: '体质', int: '智力', wis: '感知', cha: '魅力' }
 const modOf = (s) => Math.floor((s - 10) / 2)
@@ -407,7 +408,7 @@ return {
       } catch (e) { return { ok: false, error: String(e && e.message || e) } }
     }))
     // —— 规则书检索（读取本地索引，索引由 tools/index-rules.mjs 生成）——
-    const INDEX_DIR = 'E:/HarnessTarvern/dnd5e/data/rules-index'
+    const INDEX_DIR = ROOT + '/data/rules-index'
     let indexCache = null
     const loadIndex = async () => {
       if (indexCache) return indexCache
@@ -474,7 +475,7 @@ return {
     unreg.push(harness.handle('ui.source', async ({ file }) => {
       try {
         const name = String(file || 'ui-client.latest.txt').replace(/[^A-Za-z0-9._-]/g, '')
-        const src = await fsRead('E:/HarnessTarvern/dnd5e/engine/' + name)
+        const src = await fsRead(ROOT + '/engine/' + name)
         return { ok: true, file: name, source: src, bytes: src.length }
       } catch (e) { return { ok: false, error: String(e && e.message || e) } }
     }))

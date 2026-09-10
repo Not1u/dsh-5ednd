@@ -311,7 +311,9 @@ function Bag(props) {
     if (override) setQ(query)
     setBusy(true); setMsg(''); setItems(null); setOpenId(''); setText('')
     try {
-      const r = await host.call('rules.search', { query: query, book: book || undefined, limit: 12 })
+      const args = { query: query, limit: 12 }
+      if (book) args.book = book
+      const r = await host.call('rules.search', args)
       if (r && r.ok) { setItems(r.items || []); remember(query.trim()); if (!(r.items || []).length) setMsg('未命中：' + query) } else setMsg((r && r.error) || '检索失败')
     } catch (e) { setMsg(String(e && e.message || e)) }
     setBusy(false)

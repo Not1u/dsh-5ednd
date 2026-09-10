@@ -1,6 +1,5 @@
 # 依赖与产物
 node_modules/
-data/rules-index/
 *.log
 
 # 规则书原文索引不得公开（版权）：data/rules-index/ 已在上面忽略
@@ -11,3 +10,6 @@ data/rules-index/
 engine/_chk.mjs
 engine/_src-phb/
 engine/_src-*.html
+
+# 规则书索引已按项目要求内置（学习用途）
+# data/rules-index/ 不再忽略
