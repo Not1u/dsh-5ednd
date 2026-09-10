@@ -67,4 +67,13 @@ console.log('build.options ok=' + opts.ok + ' classes=' + (opts.classes || []).l
 const ls = await handlers['levelset.info']({ id: files[0].replace(/\.json$/, ''), target: 7 })
 console.log('levelset.info ok=' + ls.ok + ' target=' + ls.target + ' pending=' + ((ls.pending || []).length) + ' undefined=' + (assertLossless('levelset.info', ls).length ? 'YES' : 'no'))
 
+const rs = await handlers['rules.stats']({})
+console.log('rules.stats ok=' + rs.ok + ' total=' + rs.total + ' books=' + ((rs.books || []).length))
+if (!rs.ok || !rs.total) failures++
+const rr = await handlers['rules.search']({ query: '擒抱', limit: 3 })
+console.log('rules.search ok=' + rr.ok + ' hits=' + ((rr.items || []).length) + ' first=' + (((rr.items || [])[0] || {}).title || '-'))
+if (!rr.ok || !(rr.items || []).length) failures++
+const rd = await handlers['rules.read']({ id: ((rr.items || [])[0] || {}).id })
+console.log('rules.read ok=' + rd.ok + ' chars=' + (((rd.entry || {}).text) || '').length)
+if (!rd.ok) failures++
 console.log(failures ? ('FAILURES: ' + failures) : 'ALL CHECKS PASSED')

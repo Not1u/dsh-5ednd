@@ -406,6 +406,71 @@ return {
         return { ok: true, saved: !!r.ok, saveError: r.error || '', summary: '状态：' + (list.map(c => c.name + (c.level != null ? ' ' + c.level : '')).join('、') || '（无）'), character: JSON.stringify(pc) }
       } catch (e) { return { ok: false, error: String(e && e.message || e) } }
     }))
+    // —— 规则书检索（读取本地索引，索引由 tools/index-rules.mjs 生成）——
+    const INDEX_DIR = 'E:/HarnessTarvern/dnd5e/data/rules-index'
+    let indexCache = null
+    const loadIndex = async () => {
+      if (indexCache) return indexCache
+      let manifest = { books: [] }
+      try { manifest = JSON.parse(await fsRead(INDEX_DIR + '/manifest.json')) } catch (e) { manifest = { books: [] } }
+      const entries = []
+      for (const b of (manifest.books || [])) {
+        try {
+          const txt = await fsRead(INDEX_DIR + '/' + b.jsonl)
+          for (const line of txt.split('\n')) { if (!line.trim()) continue; try { entries.push(JSON.parse(line)) } catch (e) { } }
+        } catch (e) { }
+      }
+      indexCache = { manifest, entries }
+      return indexCache
+    }
+    const countOf = (hay, needle) => { let n = 0, i = 0; const h = String(hay).toLowerCase(), nd = String(needle).toLowerCase(); while ((i = h.indexOf(nd, i)) !== -1) { n++; i += nd.length } return n }
+    const makeSnippet = (text, term, width) => {
+      const w = width || 70
+      const i = String(text).toLowerCase().indexOf(String(term).toLowerCase())
+      if (i < 0) return String(text).slice(0, w * 2)
+      const start = Math.max(0, i - w)
+      return (start > 0 ? '…' : '') + String(text).slice(start, i + w * 2).replace(/\s+/g, ' ') + '…'
+    }
+
+    unreg.push(harness.handle('rules.stats', async () => {
+      try {
+        const idx = await loadIndex()
+        return jclean({ ok: true, generatedAt: idx.manifest.generatedAt || null, total: idx.entries.length, books: (idx.manifest.books || []).map(b => ({ book: b.book, entries: b.entries })) })
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+
+    unreg.push(harness.handle('rules.search', async ({ query, book, limit }) => {
+      try {
+        const terms = String(query || '').trim().split(/[\s,，]+/).filter(Boolean)
+        if (!terms.length) return { ok: true, items: [] }
+        const idx = await loadIndex()
+        const pool = book ? idx.entries.filter(e => e.book === book) : idx.entries
+        const hits = []
+        for (const e of pool) {
+          let score = 0, ok = true
+          for (const t of terms) {
+            const ti = countOf(e.title, t), tx = countOf(e.text, t)
+            if (!ti && !tx) { ok = false; break }
+            score += ti * 12 + Math.min(tx, 40)
+          }
+          if (!ok) continue
+          if (e.title.toLowerCase().includes(terms[0].toLowerCase())) score += 8
+          hits.push({ id: e.id, book: e.book, title: e.title, score: score, snippet: makeSnippet(e.text, terms[0]) })
+        }
+        hits.sort((a, b) => b.score - a.score || a.title.length - b.title.length)
+        return jclean({ ok: true, items: hits.slice(0, Math.max(1, Math.min(50, Number(limit) || 12))) })
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+
+    unreg.push(harness.handle('rules.read', async ({ id }) => {
+      try {
+        const idx = await loadIndex()
+        const e = idx.entries.find(x => x.id === id)
+        if (!e) return { ok: false, error: '未找到条目 ' + id }
+        return { ok: true, entry: { id: e.id, book: e.book, title: e.title, file: e.file, text: e.text } }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+
     unreg.push(harness.handle('ui.source', async ({ file }) => {
       try {
         const name = String(file || 'ui-client.latest.txt').replace(/[^A-Za-z0-9._-]/g, '')
