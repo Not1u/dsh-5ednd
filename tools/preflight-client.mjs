@@ -75,3 +75,11 @@ console.log('fallback: tab=' + (tab ? tab.id : 'MISSING') + ' calls=' + JSON.str
 if (!tab) { console.log('FAIL: inline fallback path broken'); process.exit(1) }
 
 console.log('PREFLIGHT PASSED')
+
+// SWEEP: 清掉任何预检遗留的测试卡（名字以「预检」开头）
+try {
+  const dir = path.join(ROOT, 'characters')
+  for (const f of fs.readdirSync(dir).filter(n => n.endsWith('.json'))) {
+    try { const pc = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); if (pc && typeof pc.name === 'string' && pc.name.startsWith('预检')) { fs.unlinkSync(path.join(dir, f)); console.log('sweep: removed ' + f) } } catch (e) { }
+  }
+} catch (e) { }
