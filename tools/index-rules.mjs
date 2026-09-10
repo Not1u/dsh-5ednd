@@ -10,7 +10,9 @@ const hasFlag = (name) => args.includes('--' + name)
 const SOURCE = getArg('source', 'E:/HarnessWorkspace/跑团/rules-src/dnd5e-chm')
 const OUT = getArg('out', 'E:/HarnessTarvern/dnd5e/data/rules-index')
 const DEFAULT_BOOKS = ['玩家手册', '城主指南', '玩家手册2024', '城主指南2024', '速查', '塔莎的万事坩埚', '珊娜萨的万事指南']
-const books = hasFlag('all') ? null : (getArg('books', '') ? getArg('books', '').split(',') : DEFAULT_BOOKS)
+const books = hasFlag('all')
+  ? fs.readdirSync(SOURCE, { withFileTypes: true }).filter(e => e.isDirectory()).map(e => e.name)
+  : (getArg('books', '') ? getArg('books', '').split(',') : DEFAULT_BOOKS)
 
 const decoder = new TextDecoder('gb18030')
 const readHtml = (p) => decoder.decode(fs.readFileSync(p))
