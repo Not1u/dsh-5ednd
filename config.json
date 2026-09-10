@@ -1,0 +1,5 @@
+{
+  "dataRoot": ".",
+  "indexDir": "data/rules-index",
+  "verifiedDshVersion": "0.1.2-rc.1"
+}

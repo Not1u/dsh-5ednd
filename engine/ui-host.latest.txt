@@ -1,0 +1,464 @@
+console.log('DND-UI host starting (v16)')
+const CHAR_DIR = 'E:/HarnessTarvern/dnd5e/characters'
+const RULES_PATH = 'E:/HarnessTarvern/dnd5e/rules/dnd5e-srd.json'
+const SPELLS_PATH = 'E:/HarnessTarvern/dnd5e/rules/spells.json'
+const FEATURES_PATH = 'E:/HarnessTarvern/dnd5e/rules/features.json'
+const SUB_PATH = 'E:/HarnessTarvern/dnd5e/rules/subclasses.json'
+const FEATS_PATH = 'E:/HarnessTarvern/dnd5e/rules/feats.json'
+const AB = ['str', 'dex', 'con', 'int', 'wis', 'cha']
+const ABF = { str: '力量', dex: '敏捷', con: '体质', int: '智力', wis: '感知', cha: '魅力' }
+const modOf = (s) => Math.floor((s - 10) / 2)
+const nowIso = () => new Date().toISOString()
+const PBCOST = { 8: 0, 9: 1, 10: 2, 11: 3, 12: 4, 13: 5, 14: 7, 15: 9 }
+const KNOWN1 = { bard: 4, sorcerer: 2, warlock: 2 }
+const ASI_BASE = [4, 8, 12, 16, 19]
+const ASI_EXTRA = { fighter: [6, 14], rogue: [10] }
+const FULL = ['bard', 'cleric', 'druid', 'sorcerer', 'wizard']
+const HALF = ['paladin', 'ranger']
+const KNOWN_BY_LEVEL = { bard: [4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 15, 16, 18, 19, 19, 20, 22, 22, 22], sorcerer: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 12, 13, 13, 14, 14, 15, 15, 15, 15], warlock: [2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 11, 11, 12, 12, 13, 13, 14, 14, 15, 15] }
+const PRIMARY = { barbarian: 'str', bard: 'cha', cleric: 'wis', druid: 'wis', fighter: 'str', monk: 'dex', paladin: 'str', ranger: 'dex', rogue: 'dex', sorcerer: 'cha', warlock: 'cha', wizard: 'int' }
+const packName = { burglarsPack: '窃贼套装', diplomatsPack: '外交官套装', dungeoneersPack: '地城探索套装', entertainersPack: '艺人套装', explorersPack: '探险家套装', monksPack: '武僧套装', priestsPack: '祭司套装', scholarsPack: '学者套装' }
+const armorName = { unarmored: '无甲', leather: '皮甲', studdedLeather: '镶钉皮甲', hide: '生皮甲', chainShirt: '锁子衫', scaleMail: '鳞甲', breastplate: '胸甲', halfPlate: '半身板甲', ringMail: '环甲', chainMail: '链甲', splint: '条板甲', plate: '全身板甲' }
+const CONDITIONS = [
+  { key: 'blinded', name: '目盲', desc: '看不见，自身攻击有劣势，敌人攻击你有优势。' },
+  { key: 'charmed', name: '魅惑', desc: '不能攻击魅惑者，魅惑者的社交检定对你有利。' },
+  { key: 'deafened', name: '耳聋', desc: '听不见声音，依赖听觉的检定自动失败。' },
+  { key: 'exhaustion', name: '力竭', level: 1, desc: '力竭 X：属性检定有劣势，速度减 X×5 尺；升到 6 级即死亡。' },
+  { key: 'frightened', name: '恐惧', desc: '看见来源时攻击与检定有劣势，且不能主动靠近。' },
+  { key: 'grappled', name: '擒抱', desc: '速度变为 0，擒抱者移动可拖带你。' },
+  { key: 'incapacitated', name: '失能', desc: '不能执行动作或反应。' },
+  { key: 'invisible', name: '隐形', desc: '自身攻击有优势，敌人攻击你有劣势。' },
+  { key: 'paralyzed', name: '麻痹', desc: '失能、不能移动说话；近战命中必重击，力敏豁免自动失败。' },
+  { key: 'petrified', name: '石化', desc: '变成石头：失能、重量增十倍、对伤害有抗性、力敏豁免自动失败。' },
+  { key: 'poisoned', name: '中毒', desc: '攻击检定与属性检定有劣势。' },
+  { key: 'prone', name: '倒地', desc: '只能爬行；近战攻击对你有优势，远程攻击对你有劣势。' },
+  { key: 'restrained', name: '束缚', desc: '速度 0，攻击有劣势，敏捷豁免有劣势，敌人攻击你有优势。' },
+  { key: 'stunned', name: '震慑', desc: '失能、不能移动、说话结巴，力敏豁免自动失败。' },
+  { key: 'unconscious', name: '昏迷', desc: '失能、倒地、无法行动；近战命中必重击，力敏豁免自动失败。' }
+]
+const raceNameMap = {}
+const featMap = {}
+let srdCache = null, spellList = [], subData = null, featList = []
+return {
+  apply(ctx) {
+    const overlay = new Map()
+    const callTool = async (name, args) => {
+      try {
+        const tools = ctx.get('tools')
+        if (!tools || typeof tools.execute !== 'function') return { ok: false, error: 'tools service unavailable' }
+        const ac = new AbortController()
+        const res = await tools.execute({ callId: 'dnd-' + Math.random().toString(36).slice(2), name: name, arguments: args, signal: ac.signal })
+        if (res && res.isError) return { ok: false, error: (res.error && res.error.message) || 'tool failed' }
+        const v = res && res.value
+        return (v && typeof v === 'object') ? v : { ok: false, error: 'unexpected tool result' }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }
+    const persist = async (pc) => { const r = await callTool('dnd_save', { json: JSON.stringify({ id: pc.id, character: JSON.stringify(pc) }) }); overlay.set(pc.id, pc); return r }
+    const jclean = (v) => { if (v === undefined) return null; if (v === null) return null; if (Array.isArray(v)) return v.map(jclean); if (typeof v === 'object') { const o = {}; for (const k of Object.keys(v)) o[k] = jclean(v[k]); return o } return v }
+    const fsRead = async (p) => { const fs = ctx.get('fs'); const t = await fs.resolve(p); let s = await fs.readText(t); if (s.charCodeAt(0) === 0xfeff) s = s.slice(1); return s }
+    const loadSrd = async () => { if (!srdCache) { srdCache = JSON.parse(await fsRead(RULES_PATH)); srdCache.races.forEach(r => { raceNameMap[r.key] = r.name }) } return srdCache }
+    const loadSpells = async () => { if (!spellList.length) { try { spellList = JSON.parse(await fsRead(SPELLS_PATH)).spells || [] } catch (e) { spellList = [] } } return spellList }
+    const loadFeatures = async () => { if (!Object.keys(featMap).length) { try { const f = JSON.parse(await fsRead(FEATURES_PATH)); Object.keys(f.features || {}).forEach(k => { featMap[k] = f.features[k] }) } catch (e) { } } return featMap }
+    const loadSubs = async () => { if (!subData) { try { subData = JSON.parse(await fsRead(SUB_PATH)) } catch (e) { subData = { classes: {}, extraChoices: {} } } } return subData }
+    const loadFeats = async () => { if (!featList.length) { try { featList = JSON.parse(await fsRead(FEATS_PATH)).feats || [] } catch (e) { featList = [] } } return featList }
+    const smap = () => { const m = {}; spellList.forEach(s => { m[s.key] = s }); return m }
+    const brief = (s) => ({ key: s.key, name: s.name, level: s.level, school: s.school, time: s.time, range: s.range, duration: s.duration, conc: !!s.conc, ritual: !!s.ritual, fx: s.fx || '' })
+    const resolved = (list) => (list || []).map(x => { const key = Array.isArray(x) ? x[0] : x.key; const nm = Array.isArray(x) ? x[1] : x.name; const fd = featMap[key]; return { key, name: nm || key, desc: (fd && fd.desc) || '' } })
+    const asiLevelsOf = (clsKey) => ASI_BASE.concat(ASI_EXTRA[clsKey] || []).sort((a, b) => a - b)
+    const fullSlots = (srd, n) => { if (n <= 0) return []; const row = srd.core.spellSlots.full[n - 1]; const out = []; if (row) row.forEach((m, i) => { if (Number(m) > 0) out.push({ lv: i + 1, max: Number(m) }) }); return out }
+    const slotsForClasses = (srd, classes) => {
+      let caster = 0, warlockLv = 0
+      for (const c of (classes || [])) { if (FULL.includes(c.class)) caster += Number(c.level) || 0; else if (HALF.includes(c.class)) caster += Math.floor((Number(c.level) || 0) / 2); else if (c.class === 'warlock') warlockLv += Number(c.level) || 0 }
+      const full = fullSlots(srd, caster)
+      if (full.length) return full
+      if (warlockLv > 0) { const w = srd.core.spellSlots.warlock[warlockLv - 1]; return w ? [{ lv: w.maxLevel, max: w.slots }] : [] }
+      return []
+    }
+    const subOptions = (clsKey) => { const cls = subData && subData.classes && subData.classes[clsKey]; return cls ? { chooseLevel: cls.chooseLevel, options: (cls.options || []).map(o => ({ key: o.key, name: o.name, choices: o.choices || null })) } : null }
+    const subFeatures = (clsKey, subKey, level) => { const cls = subData && subData.classes && subData.classes[clsKey]; if (!cls) return []; const opt = (cls.options || []).find(o => o.key === subKey); if (!opt) return []; return (opt.features || []).filter(f => Number(f.level) <= level) }
+    const resourcesOf = (srd, classes, pc) => {
+      const mods = {}; for (const a of AB) mods[a] = modOf(Number((pc.abilities || {})[a] || 10))
+      const out = []
+      const add = (key, name, max, note) => { if (max > 0) out.push({ key, name, max: max === 99 ? '∞' : max, note: note || '' }) }
+      for (const c of (classes || [])) {
+        const clsKey = c.class, level = Number(c.level) || 0
+        if (clsKey === 'barbarian') add('rage', '狂暴', level >= 17 ? 6 : level >= 12 ? 5 : level >= 6 ? 4 : level >= 3 ? 3 : 2, '长休')
+        if (clsKey === 'fighter') { add('secondWind', '回气', 1, '短休/长休'); if (level >= 2) add('actionSurge', '动作如潮', level >= 17 ? 2 : 1, '短休/长休'); if (level >= 9) add('indomitable', '不屈', level >= 17 ? 3 : level >= 13 ? 2 : 1, '长休') }
+        if (clsKey === 'monk' && level >= 2) add('ki', '气', level, '短休/长休')
+        if (clsKey === 'paladin') { add('layOnHands', '圣疗池', 5 * level, '治疗点'); if (level >= 3) add('channelDivinity', '引导神力', level >= 18 ? 3 : level >= 6 ? 2 : 1, '短休/长休') }
+        if (clsKey === 'cleric' && level >= 2) add('channelDivinity', '引导神力', level >= 18 ? 3 : level >= 6 ? 2 : 1, '短休/长休')
+        if (clsKey === 'druid' && level >= 2) add('wildShape', '野性变身', 2, '短休/长休')
+        if (clsKey === 'sorcerer' && level >= 2) add('sorceryPoints', '术法点', level, '长休')
+        if (clsKey === 'bard') add('inspiration', '激励骰', Math.max(1, mods.cha), '短休/长休')
+        if (clsKey === 'wizard' && level >= 2) add('arcaneRecovery', '奥术回响', 1, '短休')
+      }
+      return out
+    }
+    const cantripsMax = (clsKey, level) => { const c = srdCache.classes[clsKey]; const arr = c && c.casting && c.casting.cantripsKnown; return arr && arr[level - 1] ? Number(arr[level - 1]) : 0 }
+    const knownMax = (clsKey, level) => (KNOWN_BY_LEVEL[clsKey] ? KNOWN_BY_LEVEL[clsKey][level - 1] : 0)
+    const unreg = []
+    unreg.push(harness.handle('party.list', async () => {
+      try {
+        const fs = ctx.get('fs'); const dir = await fs.resolve(CHAR_DIR); let names = []
+        if (typeof fs.listDir === 'function') { const es = await fs.listDir(dir); names = es.filter(e => /[.]json$/i.test(e.name)).map(e => e.name) }
+        else { const es = await fs.readDir(dir); names = es.filter(n => /[.]json$/i.test(n)).map(n => n) }
+        await loadSrd(); const items = []
+        for (const n of names) { try { const id0 = n.replace(/[.]json$/i, ''); const pc = overlay.get(id0) ? overlay.get(id0) : JSON.parse(await fsRead(CHAR_DIR + '/' + n)); items.push({ id: pc.id || n.replace(/[.]json$/i, ''), name: pc.name, race: raceNameMap[pc.race] || pc.race, cls: (pc.classes || []).map(c => { const cd = srdCache.classes[c.class]; return ((cd && cd.name) || c.class) + c.level }).join('/'), level: pc.level, hp: pc.hp && pc.hp.current, max: pc.hp && pc.hp.max }) } catch (e) { } }
+        return { ok: true, items: jclean(items) }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('party.sheet', async ({ id }) => {
+      try {
+        const srd = await loadSrd(); await loadSpells(); await loadFeatures(); await loadSubs()
+        const safe = String(id).replace(/[^A-Za-z0-9._-]/g, '')
+        const pc = overlay.get(String(id)) ? overlay.get(String(id)) : JSON.parse(await fsRead(CHAR_DIR + '/' + safe + '.json'))
+        const level = Number(pc.level) || 1
+        const clsKey = (pc.classes || [])[0] && (pc.classes || [])[0].class
+        const pb = srd.core.proficiencyBonusByLevel[level - 1]
+        const mods = {}; for (const a of AB) mods[a] = modOf(Number(pc.abilities[a]))
+        const equip = pc.equipment || {}
+        const equipManaged = !!pc.equipment
+        const legacyKey = (pc.armor && pc.armor.key) ? pc.armor.key : null
+        const legacyDef = legacyKey ? (srd.armor[legacyKey] || null) : null
+        const armorEq = equip.armor || ((!equipManaged && legacyKey) ? { key: legacyKey, name: armorName[legacyKey] || legacyKey, base: (legacyDef && legacyDef.base != null) ? legacyDef.base : 10, dexCap: (legacyDef && legacyDef.dexCap !== undefined) ? legacyDef.dexCap : null, category: (legacyDef && legacyDef.category) || 'light', magicBonus: 0 } : null)
+        const shieldEq = equip.shield || ((!equipManaged && pc.armor && pc.armor.shield) ? { key: 'shield', name: '盾牌', acBonus: Number(srd.armor.shieldBonus) || 2, magicBonus: 0 } : null)
+        const w0 = (pc.weapons || [])[0]
+        const w0d = w0 ? (srd.weapons[w0] || null) : null
+        const mainHand = equip.mainHand || ((!equipManaged && w0) ? { key: w0, name: (w0d && w0d.name) || w0, damage: w0d ? w0d.damage : '1d4', dmgType: w0d ? w0d.dmgType : '', props: (w0d && w0d.props) || [], magicBonus: 0 } : null)
+        const offHand = equip.offHand || null
+        const worn = equip.worn || []
+        const dexMod = mods.dex
+        const acParts = []
+        let ac = 0
+        if (armorEq) { const cap = armorEq.dexCap; const use = (cap === null || cap === undefined) ? dexMod : Math.min(dexMod, Number(cap)); ac = Number(armorEq.base) + use + (Number(armorEq.magicBonus) || 0); acParts.push(armorEq.name + ' ' + armorEq.base + (Number(armorEq.magicBonus) ? '+' + armorEq.magicBonus : '') + ' 敏捷' + (use >= 0 ? '+' : '') + use) }
+        else { ac = 10 + dexMod; acParts.push('无甲 10 敏捷' + (dexMod >= 0 ? '+' : '') + dexMod) }
+        if (shieldEq) { const sb = Number(shieldEq.acBonus) || 2; const tb = sb + (Number(shieldEq.magicBonus) || 0); ac += tb; acParts.push(shieldEq.name + ' +' + tb) }
+        for (const w of worn) { const b = Number(w.acBonus) || 0; if (b) { ac += b; acParts.push(w.name + ' +' + b) } }
+        if (pc.acOverride) { ac = Number(pc.acOverride); acParts.push('手动覆盖 ' + pc.acOverride) }
+        const abilFor = (it) => { const pr = (it && it.props) || []; const fin = pr.includes('finesse'); const rng = pr.includes('ammunition') || pr.includes('ranged'); const ab = (it && it.ability) || (fin ? (dexMod > mods.str ? 'dex' : 'str') : (rng ? 'dex' : 'str')); return { ab: ab, mod: mods[ab] || 0 } }
+        const weaponStat = (it) => { if (!it || !it.damage) return null; const a = abilFor(it); const mg = Number(it.magicBonus) || 0; return { key: it.key, name: it.name, damage: it.damage, dmgType: it.dmgType || '', ability: a.ab, attack: pb + a.mod + mg, dmgBonus: a.mod + mg } }
+        const codeMap = {}; CONDITIONS.forEach(c => { codeMap[c.key] = c })
+        const condList = (pc.conditions || []).map(c => { const o = (typeof c === 'string') ? { key: c } : c; const meta = codeMap[o.key] || {}; return { key: o.key, name: o.name || meta.name || o.key, level: o.level || null, note: o.note || '', desc: meta.desc || '' } })
+        const equipView = jclean({ armor: armorEq || null, shield: shieldEq || null, mainHand: equip.mainHand || null, offHand: equip.offHand || null, worn: worn || [] })
+        const acBreakdown = acParts.join('｜')
+        const weaponStats = { main: weaponStat(mainHand), off: weaponStat(offHand) }
+        const saveProfs = pc.savingThrowProfs || []
+        const saves = {}; for (const a of AB) saves[a] = mods[a] + (saveProfs.includes(a) ? pb : 0)
+        const out = { id: pc.id, name: pc.name, level, xp: Number(pc.xp) || 0, xpNext: level < 20 ? srd.core.xpByLevel[level] : null, xpPrev: srd.core.xpByLevel[level - 1] || 0, race: raceNameMap[pc.race] || pc.race, classes: (pc.classes || []).map(c => { const cd = srd.classes[c.class]; return ((cd && cd.name) || c.class) + ' Lv' + c.level }), clsKeys: (pc.classes || []).map(c => c.class), hp: { cur: pc.hp.current, max: pc.hp.max, temp: pc.hp.temp || 0 }, ac, acOverride: pc.acOverride || null, equipment: equipView, conditions: condList, conditionCatalog: CONDITIONS, acBreakdown: acBreakdown, weaponStats: weaponStats, pb, mods, saves, saveProfs, dc: pc.spellcasting ? pc.spellcasting.dc : null, attack: pc.spellcasting ? pc.spellcasting.attackBonus : null, hitDice: (pc.hp && pc.hp.hitDiceTotal) || '', conditions: pc.conditions || [], spells: [], slots: [], inventory: [], features: { race: [], class: [], background: [] }, subclass: null, choices: { pactBoon: null, invocations: [], feats: (pc.feats || []).map(f => f.name) }, resources: resourcesOf(srd, pc.classes, pc) }
+        if (pc.choices && pc.choices.pactBoon) { const b = ((subData.extraChoices.warlock || {}).pactBoons || []).find(x => x.key === pc.choices.pactBoon); out.choices.pactBoon = b ? b.name : pc.choices.pactBoon }
+        if (pc.choices && pc.choices.invocations) out.choices.invocations = pc.choices.invocations.map(k => { const i = ((subData.extraChoices.warlock || {}).invocations || []).find(x => x.key === k); return i ? i.name : k })
+        if (pc.features) {
+          const raceData = srd.races.find(r => r.key === pc.race)
+          if (raceData) out.features.race = resolved((pc.features.race && pc.features.race.length) ? raceData.features.filter(f => (pc.features.race || []).includes(f[0])) : raceData.features)
+          const clsKeys = pc.features.class || []
+          if (clsKeys.length) { const cd = clsKey && srd.classes[clsKey]; if (cd) out.features.class = resolved(cd.level1Features.filter(f => clsKeys.includes(f[0]))) }
+          const bgKeys = pc.features.background || []
+          if (bgKeys.length) { const bd = srd.backgrounds[pc.background]; if (bd && bd.feature) out.features.background = resolved([[bd.feature[0], bd.feature[1]]]) }
+        }
+        if (pc.subclass && pc.subclass.key) { const so = subOptions(clsKey); const nm = ((so && so.options) || []).find(o => o.key === pc.subclass.key); out.subclass = { key: pc.subclass.key, name: (nm && nm.name) || pc.subclass.name || pc.subclass.key, features: subFeatures(clsKey, pc.subclass.key, level), picks: pc.subclass.picks || {} } }
+        if (pc.spellcasting) { const keys = [].concat(pc.spellcasting.cantrips || [], pc.spellcasting.spells || []); const m = smap(); out.spells = keys.map(k => m[k]).filter(Boolean) }
+        out.slots = slotsForClasses(srd, pc.classes)
+        const map = {}
+        ;(pc.inventory || []).forEach(it => { const key = it.key || it.name || '?'; const q = Number(it.qty) || 1; if (map[key]) map[key].qty += q; else map[key] = { key, name: it.name || key, qty: q, cat: it.cat || '', kind: it.kind || it.cat || 'gear', damage: it.damage || '', dmgType: it.dmgType || '', acBonus: Number(it.acBonus) || 0, base: (it.base === undefined ? null : it.base), dexCap: (it.dexCap === undefined ? null : it.dexCap), props: it.props || [], desc: it.desc || '', magicBonus: Number(it.magicBonus) || 0, custom: !!it.custom } })
+        out.inventory = Object.keys(map).map(k => map[k])
+        return { ok: true, sheet: jclean(out) }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('build.options', async () => {
+      try {
+        const srd = await loadSrd(); await loadFeatures(); await loadSubs()
+        const races = srd.races.map(r => ({ key: r.key, name: r.name, asi: r.asi, features: resolved(r.features) }))
+        const classes = srd.classes.available.map(k => { const c = srd.classes[k]; return { key: k, name: c.name, primary: c.primaryAbility, casting: c.casting ? { ability: c.casting.ability, kind: c.casting.kind } : null, skillCount: Number(c.skillCount), skillOptions: c.skillOptions, armorTags: c.armorProfs, weaponTags: c.weaponProfs, features: resolved(c.level1Features), subclass: subOptions(k) } })
+        const backgrounds = Object.keys(srd.backgrounds).map(k => { const b = srd.backgrounds[k]; return { key: k, name: b.name, skills: b.skillProfs, features: b.feature ? resolved([[b.feature[0], b.feature[1]]]) : [] } })
+        return jclean({ ok: true, races, classes, backgrounds, packs: Object.keys(packName).map(k => ({ key: k, name: packName[k] })), armor: Object.keys(srd.armor).filter(k => k !== 'unarmored' && k !== 'shieldBonus').map(k => ({ key: k, name: armorName[k] || k, base: srd.armor[k].base, cat: srd.armor[k].category })), weapons: Object.keys(srd.weapons).map(k => ({ key: k, name: srd.weapons[k].name, damage: srd.weapons[k].damage, dmgType: srd.weapons[k].dmgType, cat: srd.weapons[k].category, props: srd.weapons[k].props })) })
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('build.caster', async ({ cls }) => {
+      try {
+        const srd = await loadSrd(); const spells = await loadSpells()
+        const c = srd.classes[cls]
+        if (!c || !c.casting) return { ok: false }
+        if (cls === 'paladin' || cls === 'ranger') return { ok: false, note: '2 级才施法' }
+        const prepared = cls === 'cleric' || cls === 'druid'
+        const cMax = Number(c.casting.cantripsKnown && c.casting.cantripsKnown[0]) || 0
+        const kMax = prepared ? 0 : (cls === 'wizard' ? 6 : (KNOWN1[cls] || 0))
+        const can = spells.filter(s => s.level <= 1 && (s.classes || []).includes(cls)).map(brief)
+        return { ok: true, ability: c.casting.ability, kind: c.casting.kind, prepared, cantripsKnown: cMax, knownMax: kMax, spells: can }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('build.create', async ({ json }) => {
+      try {
+        const srd = await loadSrd(); await loadSpells(); await loadSubs()
+        const spec = JSON.parse(json); const problems = []
+        const race = srd.races.find(r => r.key === spec.race)
+        const cls = srd.classes[spec.cls]
+        const bg = srd.backgrounds[spec.bg]
+        if (!race) problems.push('race'); if (!cls) problems.push('class'); if (!bg) problems.push('background')
+        const so = subOptions(spec.cls)
+        let subclass = null
+        if (so && so.chooseLevel === 1) {
+          if (!spec.subclass) problems.push('此职业 1 级必须选择子职业')
+          else if (!so.options.some(o => o.key === spec.subclass)) problems.push('子职业不在列表内')
+          else subclass = { key: spec.subclass, name: (so.options.find(o => o.key === spec.subclass) || {}).name, picks: spec.subPicks || {} }
+        } else if (spec.subclass) {
+          if (!so || !so.options.some(o => o.key === spec.subclass)) problems.push('子职业不在列表内')
+          else subclass = { key: spec.subclass, name: (so.options.find(o => o.key === spec.subclass) || {}).name, picks: spec.subPicks || {} }
+        }
+        let spend = 0; for (const a of AB) spend += PBCOST[Number((spec.scores || {})[a]) || 8]
+        if (spend !== 27) problems.push('point-buy must total 27 (got ' + spend + ')')
+        const finalAb = {}; for (const a of AB) finalAb[a] = Number((spec.scores || {})[a] || 8)
+        if (race) for (const ent of race.asi) { if (ent[0] !== 'choose') finalAb[ent[0]] += Number(ent[1]) }
+        const pb = srd.core.proficiencyBonusByLevel[0]
+        const mods = {}; for (const a of AB) mods[a] = modOf(finalAb[a])
+        const maxHp = cls ? (Number(cls.hitDieBase) + mods.con) : 0
+        const casting = (cls && cls.casting && spec.cls !== 'paladin' && spec.cls !== 'ranger') ? { ability: cls.casting.ability, dc: 8 + pb + mods[cls.casting.ability], attackBonus: pb + mods[cls.casting.ability], cantrips: (spec.cantrips || []).slice(), spells: (spec.spells || []).slice(), note: 'built by wizard' } : null
+        const inv = []
+        const addInv = (key, name, qty) => { if (key) inv.push({ key, name: name || key, qty, cat: 'gear' }) }
+        addInv(spec.pack, packName[spec.pack], 1)
+        if (spec.armor) addInv(spec.armor, armorName[spec.armor], 1)
+        const wname = (k) => (srd.weapons[k] && srd.weapons[k].name) || k
+        ;(spec.weapons || []).forEach(w => addInv(w, wname(w), 1))
+        const id = 'pc-' + Date.now().toString(36)
+        const pc = { schema: 'dnd5e.character.v1', id, name: spec.name, player: spec.player || '', level: 1, xp: 0, alignment: null, race: race ? race.key : spec.race, classes: cls ? [{ class: cls.key, level: 1 }] : [], background: bg ? bg.key : spec.bg, abilityMethod: 'point-buy', abilities: finalAb, savingThrowProfs: cls ? cls.saveProfs.slice() : [], skillProfs: (spec.skills || []).slice(), skillExpertise: [], armor: spec.armor ? { key: spec.armor, shield: false } : null, weapons: (spec.weapons || []).slice(), otherProfs: (bg && bg.extraProfs) ? bg.extraProfs.slice() : [], features: { race: race ? race.features.map(f => f[0]) : [], class: cls ? cls.level1Features.map(f => f[0]) : [], background: bg && bg.feature ? [bg.feature[0]] : [] }, subclass, choices: {}, spellcasting: casting, hp: { current: maxHp, max: maxHp, temp: 0, hitDiceTotal: cls ? ('1' + cls.hitDie) : '', hitDiceUsed: 0 }, resources: {}, inventory: inv, currency: { gp: 0, sp: 0, cp: 0 }, conditions: [], inspiration: false, notes: spec.notes || '', meta: { schemaVersion: 'dnd5e.character.v1', campaign: null, createdAt: nowIso(), updatedAt: nowIso() } }
+        let saved = false, saveError = ''
+        if (problems.length === 0) { const r = await persist(pc); saved = !!r.ok; saveError = r.error || '' }
+        return { ok: problems.length === 0, id, name: pc.name, summary: (problems.length ? 'PROBLEMS: ' + problems.join('; ') : 'HP ' + maxHp + '  DC ' + (casting ? casting.dc : '-') + (subclass ? '  子职：' + subclass.name : '')) + (saved ? ' · 已保存' : ' · 未保存(预览)'), problems, saved, saveError, character: JSON.stringify(pc) }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('levelset.info', async ({ id, target }) => {
+      try {
+        const srd = await loadSrd(); await loadSubs(); await loadFeats(); await loadSpells()
+        const safe = String(id).replace(/[^A-Za-z0-9._-]/g, '')
+        const pc = JSON.parse(await fsRead(CHAR_DIR + '/' + safe + '.json'))
+        const cur = Number(pc.level) || 1
+        const clsKey = (pc.classes || [])[0] && (pc.classes || [])[0].class
+        const t = Math.max(1, Math.min(20, Number(target) || cur))
+        if (t === cur) return { ok: true, same: true, level: cur }
+        const cd = srd.classes[clsKey] || {}
+        const conMod = modOf(Number(pc.abilities.con))
+        const hpPer = (Number(cd.levelUpHitDieAverage) || 5) + conMod
+        const maxSlotAt = (L) => { const arr = slotsForClasses(srd, (pc.classes || []).map(c => ({ class: c.class, level: c.class === clsKey ? L : c.level }))); let h = 1; arr.forEach(x => { if (x.lv > h) h = x.lv }); return h }
+        const pending = []
+        if (t > cur) {
+          for (let L = cur + 1; L <= t; L++) {
+            const so = subOptions(clsKey)
+            if (so && L === so.chooseLevel && !(pc.subclass && pc.subclass.key)) pending.push({ level: L, kind: 'subclass', options: so.options })
+            if (clsKey === 'warlock' && L === 3 && !(pc.choices && pc.choices.pactBoon)) pending.push({ level: L, kind: 'pactBoon', options: (((subData.extraChoices || {}).warlock || {}).pactBoons || []).map(b => ({ key: b.key, name: b.name, desc: b.desc })) })
+            if (clsKey === 'warlock' && (((subData.extraChoices || {}).warlock || {}).invocationLevels || []).includes(L)) {
+              const wl = (subData.extraChoices || {}).warlock || {}
+              const owned = (pc.choices && pc.choices.invocations) || []
+              const target2 = (wl.invocationCount || {})[String(L)] || 0
+              const need = Math.max(0, target2 - owned.length)
+              if (need > 0) pending.push({ level: L, kind: 'invocation', need: need, pool: (wl.invocations || []).filter(i => !owned.includes(i.key)) })
+            }
+            if (asiLevelsOf(clsKey).includes(L)) pending.push({ level: L, kind: 'asi', feats: featList.map(f => ({ key: f.key, name: f.name, desc: f.desc })) })
+            const dCantrip = cantripsMax(clsKey, L) - cantripsMax(clsKey, L - 1)
+            if (dCantrip > 0) pending.push({ level: L, kind: 'cantrip', need: dCantrip, pool: spellList.filter(s => s.level === 0 && (s.classes || []).includes(clsKey)).map(brief) })
+            const top = maxSlotAt(L)
+            if (KNOWN_BY_LEVEL[clsKey]) {
+              const dk = knownMax(clsKey, L) - knownMax(clsKey, L - 1)
+              if (dk > 0) pending.push({ level: L, kind: 'spell', need: dk, top: top, pool: spellList.filter(s => s.level >= 1 && s.level <= top && (s.classes || []).includes(clsKey)).map(brief) })
+            } else if (cd.casting) {
+              pending.push({ level: L, kind: 'spell', need: 1, top: top, pool: spellList.filter(s => s.level >= 1 && s.level <= top && (s.classes || []).includes(clsKey)).map(brief) })
+            }
+          }
+        }
+        const slotsAfter = slotsForClasses(srd, (pc.classes || []).map(c => ({ class: c.class, level: c.class === clsKey ? t : c.level })))
+        return jclean({ ok: true, level: cur, target: t, up: t > cur, hpDelta: hpPer * (t - cur), hpPerLevel: hpPer, slotsAfter, pending })
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('levelset.apply', async ({ json }) => {
+      try {
+        const srd = await loadSrd(); await loadSubs(); await loadFeats()
+        const spec = JSON.parse(json)
+        const safe = String(spec.id).replace(/[^A-Za-z0-9._-]/g, '')
+        const pc = JSON.parse(await fsRead(CHAR_DIR + '/' + safe + '.json'))
+        const cur = Number(pc.level) || 1
+        const clsKey = (pc.classes || [])[0] && (pc.classes || [])[0].class
+        const cd = srd.classes[clsKey] || {}
+        const target = Math.max(1, Math.min(20, Number(spec.target) || cur))
+        const conMod = modOf(Number(pc.abilities.con))
+        const hpPer = (Number(cd.levelUpHitDieAverage) || 5) + conMod
+        const notes = []
+        if (target !== cur) {
+          pc.level = target
+          const primary = (pc.classes || [])[0]
+          if (primary) primary.level = target
+          if (target > cur) { pc.hp.max = Number(pc.hp.max) + hpPer * (target - cur); pc.hp.current = Number(pc.hp.current) + hpPer * (target - cur) }
+          else { const red = hpPer * (cur - target); pc.hp.max = Math.max(1, Number(pc.hp.max) - red); pc.hp.current = Math.max(0, Math.min(Number(pc.hp.current), Number(pc.hp.max))) }
+          notes.push('等级 ' + cur + ' → ' + target)
+        }
+        pc.choices = pc.choices || {}
+        for (const ch of (spec.choices || [])) {
+          if (ch.kind === 'subclass') {
+            const so = subOptions(clsKey)
+            if (!so || !so.options.some(o => o.key === ch.key)) return { ok: false, error: '子职业无效' }
+            pc.subclass = { key: ch.key, name: (so.options.find(o => o.key === ch.key) || {}).name, picks: ch.picks || {} }
+            notes.push('子职业：' + pc.subclass.name)
+          } else if (ch.kind === 'pactBoon') {
+            const boons = ((subData.extraChoices || {}).warlock || {}).pactBoons || []
+            if (!boons.some(b => b.key === ch.key)) return { ok: false, error: '魔契无效' }
+            pc.choices.pactBoon = ch.key; notes.push('魔契：' + (boons.find(b => b.key === ch.key) || {}).name)
+          } else if (ch.kind === 'invocation') {
+            const pool = ((subData.extraChoices || {}).warlock || {}).invocations || []
+            const picked = ch.keys || []
+            pc.choices.invocations = Array.from(new Set(((pc.choices.invocations) || []).concat(picked.filter(k => pool.some(i => i.key === k)))))
+            notes.push('祈愿：' + picked.map(k => (pool.find(i => i.key === k) || {}).name).join('、'))
+          } else if (ch.kind === 'asi') {
+            if (ch.mode === 'one') { pc.abilities[ch.ab1] = Math.min(20, Number(pc.abilities[ch.ab1]) + 2); notes.push(ABF[ch.ab1] + ' +2') }
+            else if (ch.mode === 'two') { pc.abilities[ch.ab1] = Math.min(20, Number(pc.abilities[ch.ab1]) + 1); pc.abilities[ch.ab2] = Math.min(20, Number(pc.abilities[ch.ab2]) + 1); notes.push(ABF[ch.ab1] + '+' + ABF[ch.ab2] + ' 各+1') }
+            else if (ch.mode === 'feat') { const f = featList.find(x => x.key === ch.feat); if (!f) return { ok: false, error: '专长无效' }; pc.feats = (pc.feats || []).concat([{ key: f.key, name: f.name }]); notes.push('专长：' + f.name) }
+          } else if (ch.kind === 'cantrip' || ch.kind === 'spell') {
+            pc.spellcasting = pc.spellcasting || { ability: (cd.casting && cd.casting.ability) || 'int', cantrips: [], spells: [] }
+            const keys = ch.keys || []
+            if (ch.kind === 'cantrip') pc.spellcasting.cantrips = Array.from(new Set((pc.spellcasting.cantrips || []).concat(keys)))
+            else pc.spellcasting.spells = Array.from(new Set((pc.spellcasting.spells || []).concat(keys)))
+            notes.push((ch.kind === 'cantrip' ? '戏法' : '法术') + ' +' + keys.length)
+          }
+        }
+        if (pc.spellcasting && cd.casting) { const pb2 = srd.core.proficiencyBonusByLevel[target - 1]; pc.spellcasting.dc = 8 + pb2 + modOf(Number(pc.abilities[cd.casting.ability])); pc.spellcasting.attackBonus = pb2 + modOf(Number(pc.abilities[cd.casting.ability])) }
+        pc.meta.updatedAt = nowIso()
+        const r0 = await persist(pc)
+        return { ok: true, id: pc.id, level: target, notes, saved: !!r0.ok, saveError: r0.error || '', summary: '已调整到 Lv' + target + (notes.length ? '；' + notes.join('；') : ''), character: JSON.stringify(pc) }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('sheet.equip', async ({ json }) => {
+      try {
+        const spec = JSON.parse(json)
+        const safe = String(spec.id).replace(/[^A-Za-z0-9._-]/g, '')
+        const pc = overlay.get(String(spec.id)) ? overlay.get(String(spec.id)) : JSON.parse(await fsRead(CHAR_DIR + '/' + safe + '.json'))
+        const srd = await loadSrd()
+        pc.equipment = pc.equipment || { armor: null, shield: null, mainHand: null, offHand: null, worn: [] }
+        pc.inventory = pc.inventory || []
+        const slot = String(spec.slot || '')
+        if (['armor', 'shield', 'mainHand', 'offHand', 'worn'].indexOf(slot) < 0) return { ok: false, error: '槽位无效' }
+        let label = '(空)'
+        if (spec.clear || !spec.key) { if (slot === 'worn') pc.equipment.worn = []; else pc.equipment[slot] = null }
+        else {
+          const it = pc.inventory.find(x => x.key === spec.key)
+          if (!it) return { ok: false, error: '背包里没有该物品' }
+          const entry = { key: it.key, name: it.name, magicBonus: Number(it.magicBonus) || 0, note: it.desc || '' }
+          if (slot === 'armor') { const ad = srd.armor[it.key] || null; entry.base = Number(it.base != null ? it.base : (ad ? ad.base : 10)); entry.dexCap = (it.dexCap !== undefined ? it.dexCap : (ad ? ad.dexCap : null)); entry.category = (ad && ad.category) || it.cat || 'light'; pc.equipment.armor = entry }
+          else if (slot === 'shield') { entry.acBonus = Number(it.acBonus != null ? it.acBonus : (Number(srd.armor.shieldBonus) || 2)); pc.equipment.shield = entry }
+          else if (slot === 'mainHand' || slot === 'offHand') { entry.damage = it.damage || '1d4'; entry.dmgType = it.dmgType || '钝击'; entry.props = it.props || []; entry.ability = it.ability || null; pc.equipment[slot] = entry }
+          else { entry.acBonus = Number(it.acBonus) || 0; pc.equipment.worn = (pc.equipment.worn || []).concat([entry]) }
+          label = it.name
+        }
+        pc.meta = pc.meta || {}
+        pc.meta.updatedAt = nowIso()
+        const r = await persist(pc)
+        return { ok: true, saved: !!r.ok, saveError: r.error || '', summary: '装备栏：' + slot + ' → ' + label, character: JSON.stringify(pc) }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('sheet.item.add', async ({ json }) => {
+      try {
+        const spec = JSON.parse(json)
+        const safe = String(spec.id).replace(/[^A-Za-z0-9._-]/g, '')
+        const pc = overlay.get(String(spec.id)) ? overlay.get(String(spec.id)) : JSON.parse(await fsRead(CHAR_DIR + '/' + safe + '.json'))
+        pc.inventory = pc.inventory || []
+        const raw = spec.item || {}
+        const key = raw.key || ('custom-' + Date.now().toString(36) + '-' + Math.floor(Math.random() * 1000))
+        const item = { key, name: raw.name || key, qty: Number(raw.qty) || 1, cat: raw.kind || 'gear', kind: raw.kind || 'gear', custom: true }
+        const fields = ['acBonus', 'damage', 'dmgType', 'props', 'base', 'dexCap', 'desc', 'ability', 'magicBonus']
+        for (const fl of fields) if (raw[fl] !== undefined && raw[fl] !== '') item[fl] = raw[fl]
+        pc.inventory.push(item)
+        pc.meta = pc.meta || {}
+        pc.meta.updatedAt = nowIso()
+        const r = await persist(pc)
+        return { ok: true, saved: !!r.ok, saveError: r.error || '', summary: '新增物品：' + item.name, itemKey: key, character: JSON.stringify(pc) }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('sheet.item.remove', async ({ json }) => {
+      try {
+        const spec = JSON.parse(json)
+        const safe = String(spec.id).replace(/[^A-Za-z0-9._-]/g, '')
+        const pc = overlay.get(String(spec.id)) ? overlay.get(String(spec.id)) : JSON.parse(await fsRead(CHAR_DIR + '/' + safe + '.json'))
+        pc.inventory = (pc.inventory || []).filter(x => x.key !== spec.key)
+        const eq = pc.equipment || {}
+        for (const sl of ['armor', 'shield', 'mainHand', 'offHand']) if (eq[sl] && eq[sl].key === spec.key) eq[sl] = null
+        eq.worn = (eq.worn || []).filter(w => w.key !== spec.key)
+        pc.equipment = eq
+        pc.meta = pc.meta || {}
+        pc.meta.updatedAt = nowIso()
+        const r = await persist(pc)
+        return { ok: true, saved: !!r.ok, saveError: r.error || '', summary: '已移除物品：' + spec.key, character: JSON.stringify(pc) }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('sheet.condition.set', async ({ json }) => {
+      try {
+        const spec = JSON.parse(json)
+        const safe = String(spec.id).replace(/[^A-Za-z0-9._-]/g, '')
+        const pc = overlay.get(String(spec.id)) ? overlay.get(String(spec.id)) : JSON.parse(await fsRead(CHAR_DIR + '/' + safe + '.json'))
+        const norm = (c) => (typeof c === 'string' ? { key: c, name: c } : { key: c.key, name: c.name || c.key, level: c.level || null, note: c.note || '' })
+        let list = (pc.conditions || []).map(norm)
+        if (spec.clear) list = []
+        if (spec.remove) list = list.filter(c => c.key !== spec.remove)
+        if (spec.key) {
+          const meta = CONDITIONS.find(c => c.key === spec.key) || { name: spec.key }
+          const lv = (spec.level === '' || spec.level == null) ? null : Number(spec.level)
+          const entry = { key: spec.key, name: meta.name, level: lv, note: spec.note || '' }
+          list = list.filter(c => c.key !== spec.key).concat([entry])
+        }
+        pc.conditions = list
+        pc.meta = pc.meta || {}
+        pc.meta.updatedAt = nowIso()
+        const r = await persist(pc)
+        return { ok: true, saved: !!r.ok, saveError: r.error || '', summary: '状态：' + (list.map(c => c.name + (c.level != null ? ' ' + c.level : '')).join('、') || '（无）'), character: JSON.stringify(pc) }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('ui.source', async ({ file }) => {
+      try {
+        const name = String(file || 'ui-client.latest.txt').replace(/[^A-Za-z0-9._-]/g, '')
+        const src = await fsRead('E:/HarnessTarvern/dnd5e/engine/' + name)
+        return { ok: true, file: name, source: src, bytes: src.length }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('sheet.patch', async ({ json }) => {
+      try {
+        const spec = JSON.parse(json)
+        const safe = String(spec.id).replace(/[^A-Za-z0-9._-]/g, '')
+        const pc = overlay.get(String(spec.id)) ? overlay.get(String(spec.id)) : JSON.parse(await fsRead(CHAR_DIR + '/' + safe + '.json'))
+        pc.hp = pc.hp || { current: 1, max: 1, temp: 0 }
+        const p = spec.patch || {}
+        const notes = []
+        if (p.hpMax != null && p.hpMax !== '') { pc.hp.max = Math.max(1, Number(p.hpMax)); if (Number(pc.hp.current) > pc.hp.max) pc.hp.current = pc.hp.max; notes.push('上限HP ' + pc.hp.max) }
+        if (p.hpCur != null && p.hpCur !== '') { pc.hp.current = Math.max(0, Number(p.hpCur)); if (pc.hp.current > pc.hp.max) pc.hp.max = pc.hp.current; notes.push('当前HP ' + pc.hp.current) }
+        if (p.hpTemp != null && p.hpTemp !== '') { pc.hp.temp = Math.max(0, Number(p.hpTemp)); notes.push('临时HP ' + pc.hp.temp) }
+        if (p.xp != null && p.xp !== '') { pc.xp = Math.max(0, Number(p.xp)); notes.push('经验 ' + pc.xp) }
+        if (p.ac != null && p.ac !== '') { pc.acOverride = Math.max(1, Number(p.ac)); notes.push('AC ' + pc.acOverride) }
+        pc.meta = pc.meta || {}
+        pc.meta.updatedAt = nowIso()
+        const r = await persist(pc)
+        return { ok: true, id: pc.id, saved: !!r.ok, saveError: r.error || '', summary: (notes.length ? '已手动调整：' + notes.join('、') : '未更改任何数值'), character: JSON.stringify(pc) }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('multiclass.add', async ({ json }) => {
+      try {
+        const srd = await loadSrd()
+        const spec = JSON.parse(json)
+        const safe = String(spec.id).replace(/[^A-Za-z0-9._-]/g, '')
+        const pc = JSON.parse(await fsRead(CHAR_DIR + '/' + safe + '.json'))
+        const clsList = pc.classes || []
+        const key = spec.cls
+        if (!srd.classes[key]) return { ok: false, error: '职业无效' }
+        if (clsList.some(c => c.class === key)) return { ok: false, error: '已拥有该职业' }
+        const total = clsList.reduce((a, c) => a + (Number(c.level) || 0), 0)
+        if (total + 1 > 20) return { ok: false, error: '总等级不能超过 20' }
+        for (const c of clsList.concat([{ class: key }])) { const a = PRIMARY[c.class]; if (a && modOf(Number(pc.abilities[a])) < 3) return { ok: false, error: '兼职需 ' + ABF[a] + ' ≥ 13（当前不满足）' } }
+        const cd = srd.classes[key]
+        const conMod = modOf(Number(pc.abilities.con))
+        const hpGain = (Number(cd.levelUpHitDieAverage) || 5) + conMod
+        clsList.push({ class: key, level: 1 })
+        pc.classes = clsList
+        pc.level = total + 1
+        pc.hp.max = Number(pc.hp.max) + hpGain
+        pc.hp.current = Number(pc.hp.current) + hpGain
+        if (cd.casting) pc.spellcasting = pc.spellcasting || { ability: cd.casting.ability, cantrips: [], spells: [] }
+        pc.meta.updatedAt = nowIso()
+        const r1 = await persist(pc)
+        return { ok: true, id: pc.id, cls: key, level: pc.level, hpGain, saved: !!r1.ok, saveError: r1.error || '', summary: '兼职：新增 ' + cd.name + ' Lv1（总等级 ' + pc.level + '，HP +' + hpGain + '）', character: JSON.stringify(pc) }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    return () => { unreg.forEach(f => f()) }
+  }
+}

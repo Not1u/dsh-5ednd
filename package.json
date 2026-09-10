@@ -1,0 +1,19 @@
+{
+  "name": "dsh-5ednd",
+  "version": "0.1.0",
+  "private": false,
+  "description": "D&D 5e toolkit for DSH harnesses: character sheets UI, rules engine(0-9 spells, subclasses, multiclass, conditions) and rulebook finder.",
+  "type": "module",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/Not1u/dsh-5ednd.git" },
+  "engines": { "node": ">=20" },
+  "keywords": ["dnd", "dnd5e", "trpg", "dsh", "cordis", "tavern", "rules"],
+  "scripts": {
+    "index:rules": "node tools/index-rules.mjs",
+    "index:rules:all": "node tools/index-rules.mjs --all",
+    "find": "node tools/find-rules.mjs",
+    "test": "node tools/test-host.mjs && node tools/test-equip.mjs",
+    "migrate:gear": "node tools/migrate-gear.mjs"
+  },
+  "files": ["core", "adapters", "rules", "schema", "tools", "engine", "plugin", "README.md", "NOTICE.md", "LICENSE"]
+}
