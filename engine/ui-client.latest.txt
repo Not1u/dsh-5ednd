@@ -272,6 +272,12 @@ const css = `
 .dndp-mapfill .dndp-mapwrap{flex:1;min-height:0;max-height:none}
 .dndp-fill{display:flex;flex-direction:column;height:100%;min-height:0}
 .dndp-fill>.dndp-scroll{flex:1;min-height:0}
+/* 经验条 */
+.dndp-xpmini{display:inline-flex;align-items:center;gap:4px;flex:none}
+.dndp-xpminibar{width:52px;height:5px;border-radius:3px;background:color-mix(in srgb, var(--dsw-alias-label-primary) 14%, transparent);overflow:hidden;display:inline-block}
+.dndp-xpminibar i{display:block;height:100%;background:linear-gradient(90deg,var(--dsw-alias-brand-primary),color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, #fff));transition:width .3s ease}
+.dndp-xpminitxt{font-size:10px;color:var(--dsw-alias-label-secondary)}
+.dndp-xpup{font-size:11px;filter:drop-shadow(0 0 4px var(--dndp-glow))}
 /* 先攻条行 */
 .dndp-crow{display:flex;align-items:center;gap:8px;padding:5px 10px;border-bottom:1px solid var(--dndp-line-soft);cursor:pointer;transition:background .14s ease,border-color .14s ease}
 .dndp-crow:hover{background:var(--dsw-alias-bg-layer-2)}
@@ -1304,6 +1310,7 @@ const PANEL_DEFS = {
   map: { title: '战术地图', icon: '🗺' },
   log: { title: '战斗记录', icon: '📜' },
   combat: { title: '先攻', icon: '⚔' },
+  levelup: { title: '升级', icon: '✨' },
   dice: { title: '骰子', icon: '🎲' },
   ai: { title: 'AI 对话', icon: '💬' },
   settings: { title: '设置', icon: '⚙' },
@@ -1349,8 +1356,12 @@ function slotOf(l, id) { for (const [k] of WS_SLOTS) if (l.slots[k].panels.index
 function Roster(props) {
   const [list, setList] = React.useState(null)
   const [err, setErr] = React.useState('')
+  const [xpMap, setXpMap] = React.useState({})
   const cur = props.activeId
-  const load = () => call('party.list', {}).then(r => { if (r && r.ok) { setList(r.items); setErr('') } else setErr((r && r.error) || '读取失败') }).catch(e => setErr(String(e && e.message || e)))
+  const load = () => {
+    call('party.list', {}).then(r => { if (r && r.ok) { setList(r.items); setErr('') } else setErr((r && r.error) || '读取失败') }).catch(e => setErr(String(e && e.message || e)))
+    call('party.xp', {}).then(r => { if (r && r.ok) { const m = {}; (r.items || []).forEach(x => { m[x.id] = x }); setXpMap(m) } }).catch(() => { })
+  }
   React.useEffect(() => { load() }, [props.rev])
   React.useEffect(() => {
     const t = (typeof setInterval === 'function') ? setInterval(load, 6000) : null
@@ -1363,7 +1374,9 @@ function Roster(props) {
     h('div', { key: p.id, className: 'dndp-ritem' + (p.id === cur ? ' on' : ''), onClick: () => props.onPick(p.id) },
       h('div', { className: 'dndp-ava' }, (p.name || '?').slice(0, 1)),
       h('div', { className: 'dndp-main' },
-        h('div', { className: 'dndp-name' }, p.name),
+        h('div', { className: 'dndp-name', style: { display: 'flex', alignItems: 'center', gap: 6 } },
+          h('span', null, p.name),
+          h(XpMini, { item: (props.xpMap || {})[p.id] || { xp: 0, next: null, pct: 0 } })),
         h('div', { className: 'dndp-sub' }, (p.race || '') + (p.cls ? ' · ' + p.cls : ''))),
       h('div', { style: { textAlign: 'right' } },
         h('div', { className: 'dndp-chip', style: { display: 'block' } }, 'L' + p.level),
@@ -1456,6 +1469,9 @@ function Workspace() {
   const [activeId, setActiveId] = React.useState(null)
   const [party, setParty] = React.useState([])
   const [toolCount, setToolCount] = React.useState(null)
+  const [xpMap, setXpMap] = React.useState({})
+  const [xpReady, setXpReady] = React.useState([])
+  const [autoLevelOpened, setAutoLevelOpened] = React.useState(false)
   const [conditionCatalog, setConditionCatalog] = React.useState([
     { key: 'blinded', name: '目盲' }, { key: 'charmed', name: '魅惑' }, { key: 'deafened', name: '耳聋' },
     { key: 'exhaustion', name: '力竭' }, { key: 'frightened', name: '恐慌' }, { key: 'grappled', name: '擒抱' },
@@ -1491,8 +1507,25 @@ function Workspace() {
   React.useEffect(() => {
     call('ai.tools', {}).then(r => { if (r && r.ok) setToolCount(r.count) }).catch(() => { })
   }, [])
+  // 经验/升级轮询：有人可升级就自动把「升级」面板放出来
+  React.useEffect(() => {
+    const tick = () => call('party.xp', {}).then(r => {
+      if (!r || !r.ok) return
+      const m = {}; (r.items || []).forEach(x => { m[x.id] = x })
+      setXpMap(m); setXpReady(r.ready || [])
+    }).catch(() => { })
+    tick()
+    const t = (typeof setInterval === 'function') ? setInterval(tick, 5000) : null
+    return () => { if (t) clearInterval(t) }
+  }, [rev])
+  React.useEffect(() => {
+    if (!xpReady.length || autoLevelOpened) return
+    setAutoLevelOpened(true)
+    setMsg('✨ ' + xpReady.map(x => x.name + ' 可以升到 Lv' + x.targetLevel).join('、') + ' —— 已打开「升级」面板')
+    if (layoutRef.current && !inLayout(layoutRef.current, 'levelup')) openPanel('levelup')
+  }, [xpReady.length])
 
-  const commit = (next, opts) => {
+  function commit(next, opts) {
     setLayout(next)
     if (opts && opts.noSave) return
     if (typeof setInterval !== 'function') return
@@ -1503,10 +1536,11 @@ function Workspace() {
     }, 400)
   }
   const pick = (id) => { setActiveId(id); const n = cloneLayout(layout); n.activeSheet = id; commit(n) }
-  const openPanel = (pid) => {
+  // 用函数声明（会提升）：effect 里会在组件体执行后立刻调用它，const 箭头函数会踩 TDZ
+  function openPanel(pid) {
     const n = cloneLayout(layout)
     if (inLayout(n, pid)) { for (const [k] of WS_SLOTS) if (n.slots[k].panels.indexOf(pid) >= 0) n.collapsed = n.collapsed.filter(x => x !== pid); commit(n); return }
-    const slot = pid === 'map' ? 'center' : (pid === 'builder' || pid === 'rules' || pid === 'stats' || pid === 'settings' ? 'right' : 'left')
+    const slot = pid === 'map' ? 'center' : (pid === 'builder' || pid === 'rules' || pid === 'stats' || pid === 'settings' || pid === 'levelup' ? 'right' : 'left')
     n.slots[slot].panels.push(pid)
     n.weights[slot] = n.slots[slot].panels.map(() => 1)
     commit(n)
@@ -1666,12 +1700,13 @@ function Workspace() {
     const collapsed = layout.collapsed.indexOf(pid) >= 0
     const body = (() => {
       if (collapsed) return null
-      if (pid === 'roster') return h(Roster, { activeId: activeId, onPick: pick, onOpen: openPanel, rev: rev })
+      if (pid === 'roster') return h(Roster, { activeId: activeId, onPick: pick, onOpen: openPanel, rev: rev, xpMap: xpMap })
       if (pid === 'sheet') return h(SheetHost, { activeId: activeId, rev: rev, onReload: () => setRev(r => r + 1) })
       if (pid === 'map') return h(MapPanel, { bare: true })
       if (pid === 'log') return h(LogView, { bare: true, party: party, onBack: null })
       if (pid === 'ai') return h(AIPanel, { onOpen: openPanel })
       if (pid === 'combat') return h(CombatPanel, { onChanged: () => setRev(r => r + 1), conditionCatalog: conditionCatalog })
+      if (pid === 'levelup') return h(LevelPanel, { activeId: activeId, rev: rev, onReload: () => setRev(r => r + 1) })
       if (pid === 'dice') return h(DicePanel, { theme: theme })
       if (pid === 'settings') return h(SettingsPanel, { toolCount: toolCount, theme: theme, onTheme: async (t) => { const nt = setTheme(t); const r = await call('theme.set', { theme: nt }); return r }, presets: presets })
       if (pid === 'rules') return h('div', { style: { padding: '10px 12px' } }, h(RulesPanel, {}))
@@ -1950,6 +1985,58 @@ function AIPanel(props) {
       h('button', { className: 'dndp-btn primary', disabled: busy, onClick: () => send() }, busy ? '…' : '发送')))
 }
 
+
+// ============ 经验条 / 升级 ============
+function XpMini(props) {
+  const it = props.item || {}
+  const pct = Math.max(0, Math.min(100, Number(it.pct) || 0))
+  const next = it.next
+  return h('span', { className: 'dndp-xpmini', title: '经验 ' + (it.xp || 0) + (next ? (' / ' + next) : '（满级）') + (it.canLevel ? ('｜可升级到 Lv' + it.targetLevel) : '') },
+    h('span', { className: 'dndp-xpminibar' }, h('i', { style: { width: pct + '%' } })),
+    h('span', { className: 'dndp-xpminitxt' }, next ? (it.xp + '/' + next) : (it.xp + ' 满级')),
+    it.canLevel ? h('span', { className: 'dndp-xpup' }, '✨') : null)
+}
+
+function LevelPanel(props) {
+  const [list, setList] = React.useState(null)
+  const [err, setErr] = React.useState('')
+  const [pick, setPick] = React.useState(props.activeId || null)
+  const [sheet, setSheet] = React.useState(null)
+  const [msg, setMsg] = React.useState('')
+  const load = () => call('party.xp', {}).then(r => { if (r && r.ok) { setList(r); setErr('') } else setErr((r && r.error) || '读取失败') }).catch(e => setErr(String(e && e.message || e)))
+  React.useEffect(() => { load() }, [props.rev])
+  React.useEffect(() => { const t = (typeof setInterval === 'function') ? setInterval(load, 5000) : null; return () => { if (t) clearInterval(t) } }, [])
+  React.useEffect(() => {
+    const id = pick || (list && list.ready[0] && list.ready[0].id) || (list && list.items[0] && list.items[0].id)
+    if (!id) return
+    if (id !== pick) setPick(id)
+    call('party.sheet', { id: id }).then(r => { if (r && r.ok) setSheet(r.sheet) }).catch(() => { })
+  }, [pick, props.rev, list && list.items.length])
+  if (!list) return h('div', { className: 'dndp-empty' }, err || '读取经验…')
+  const ready = list.ready || []
+  return h('div', { className: 'dndp-fill' },
+    h('div', { className: 'dndp-aibar' },
+      h('span', { className: 'dndp-chip' }, ready.length ? ('✨ ' + ready.length + ' 人可升级') : '暂无可升级'),
+      h('div', { className: 'dndp-sp' }),
+      h('button', { className: 'dndp-btn tiny', onClick: load }, '刷新')),
+    h('div', { className: 'dndp-scroll' },
+      ready.length ? h('div', { className: 'dndp-warn', style: { margin: '8px 12px' } },
+        h('b', null, '可以升级了：'),
+        ready.map(x => x.name + ' → Lv' + x.targetLevel + '（' + x.xp + ' XP）').join('、'),
+        h('div', { className: 'dndp-note', style: { marginTop: 4 } }, '在下面选好子职/法术/专长后点「应用等级调整」即可。')) : null,
+      (list.items || []).map(it => h('div', {
+        key: it.id, className: 'dndp-crow' + (pick === it.id ? ' sel' : '') + (it.canLevel ? ' on' : ''),
+        onClick: () => setPick(it.id),
+      },
+        h('div', { className: 'dndp-main' },
+          h('div', { className: 'dndp-name' }, it.name + (it.canLevel ? ' ✨' : '')),
+          h('div', { className: 'dndp-sub' }, 'Lv' + it.level + '｜' + it.xp + ' XP' + (it.next ? (' / ' + it.next + '（距下一级 ' + Math.max(0, it.next - it.xp) + '）') : '（满级）'))),
+        h(XpMini, { item: it }))),
+      sheet ? h('div', { style: { padding: '10px 12px' } }, h(Boundary, null, h(LevelSet, { s: sheet, onReload: () => { load(); props.onReload && props.onReload() } }))) : null,
+      msg ? h('div', { className: 'dndp-note hl', style: { padding: '0 12px 12px' } }, msg) : null,
+      h('div', { className: 'dndp-note', style: { padding: '0 12px 12px' } },
+        'AI 也能发经验：pc.awardXp（默认每人全额，per:"split" 平分），返回里会标出谁可以升级；升级选择建议由玩家在面板里完成。')))
+}
 
 // ============ 先攻条 + 行动经济 ============
 const ECONS = [['action', '动作'], ['bonus', '附赠'], ['reaction', '反应']]

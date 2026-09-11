@@ -71,6 +71,11 @@ const CANNED = {
   'ext.image.map': { ok: true, summary: '已导出 data/images/map-test.svg' },
   'ai.history': { ok: true, messages: [{ role: 'user', content: '我推门进去' }, { role: 'assistant', content: '门后是一间库房。', steps: '· log.append ✔' }], model: 'gpt-4o-mini' },
   'ai.tools': { ok: true, count: 42 },
+  'party.xp': { ok: true, items: [
+    { id: 'pc-test', name: '测试角色', level: 3, xp: 900, next: 2700, prev: 900, pct: 0, canLevel: false, targetLevel: 3 },
+    { id: 'pc-test2', name: '升级中的人', level: 1, xp: 400, next: 300, prev: 0, pct: 100, canLevel: true, targetLevel: 2 },
+  ], ready: [{ id: 'pc-test2', name: '升级中的人', level: 1, xp: 400, targetLevel: 2 }], summary: '可升级：升级中的人 → Lv2' },
+  'pc.awardXp': { ok: true, each: 200, per: 'each', awards: [], levelUps: [], summary: '经验 +200（每人）：测试角色 1100 XP' },
   'combat.get': { ok: true, active: true, round: 2, turnIndex: 0, current: '图里尔',
     order: [
       { i: 0, id: 'pc-turiel', name: '图里尔', kind: 'pc', init: 18, hp: 3, max: 7, active: true, conditions: [{ key: 'poisoned', name: '中毒', rounds: 2 }], econ: { action: true, move: 15 }, pcId: 'pc-turiel-mistveil' },
@@ -144,7 +149,7 @@ function captureScope(code) {
   if (!code.includes(marker)) return code
   const names = ['Card', 'Pips', 'XpWidget', 'Sect', 'ChoiceBox', 'LevelSet', 'ManualEdit', 'StatusPanel', 'EquipPanel',
     'Bag', 'RulesPanel', 'Multiclass', 'Wizard', 'Detail', 'MapPanel', 'LogView', 'LogRow', 'DiceBar', 'PartyView',
-    'Workspace', 'Roster', 'SheetHost', 'StatsPanel', 'PanelFrame', 'AIPanel', 'SettingsPanel', 'CombatPanel', 'DicePanel', 'buildExpr', 'onAccentOf', 'normThemeLocal', 'themeClassOf', 'themeStyleOf', 'THEME_LIST', 'cellVariation', 'PANEL_DEFS', 'DEFAULT_LAYOUT', 'normLayout',
+    'Workspace', 'Roster', 'SheetHost', 'StatsPanel', 'PanelFrame', 'AIPanel', 'SettingsPanel', 'CombatPanel', 'DicePanel', 'LevelPanel', 'XpMini', 'buildExpr', 'onAccentOf', 'normThemeLocal', 'themeClassOf', 'themeStyleOf', 'THEME_LIST', 'cellVariation', 'PANEL_DEFS', 'DEFAULT_LAYOUT', 'normLayout',
     'slotOf', 'inLayout', 'cellDist', 'cloneLayout', 'reorderPanels', 'TERRAIN', 'WS_SLOTS']
   return code.replace(marker, 'globalThis.__UI_SCOPE__ = { ' + names.join(', ') + ' }\n' + marker)
 }
@@ -257,6 +262,9 @@ tryRender('Wizard', {})
 tryRender('PartyView', {})
 tryRender('Workspace', {})
 tryRender('CombatPanel', { conditionCatalog: [{ key: 'prone', name: '倒地' }] })
+tryRender('LevelPanel', { activeId: 'pc-test' })
+tryRender('XpMini', { item: { xp: 900, next: 2700, pct: 33, canLevel: false } })
+tryRender('XpMini', { item: { xp: 400, next: 300, pct: 100, canLevel: true, targetLevel: 2 } })
 tryRender('DicePanel', { theme: { name: 'azure', mode: 'dark', accent: '#5aa0ff' } })
 tryRender('AIPanel', { onOpen() { } })
 tryRender('SettingsPanel', { toolCount: 42, theme: { name: 'amber', mode: 'dark', accent: '#e0a64a' }, onTheme: async () => ({ ok: true }) })
@@ -290,6 +298,8 @@ async function deepWorkspace() {
   const splitters = starts('dndp-ws-split')
   const roster = has('dndp-ritem')
   const aiMsgs = has('dndp-bubble')
+  const xpBars = starts('dndp-xpmini')
+  const upMarks = has('dndp-xpup')
 
   deep.detail.push('地图格 ' + cells + '（期望 ' + (W * H) + '）')
   deep.detail.push('地图单位 ' + toks + '（期望 2）')
@@ -297,6 +307,7 @@ async function deepWorkspace() {
   deep.detail.push('面板 ' + panels + ' 个，标题栏 ' + titles + ' 个，分隔条 ' + splitters + ' 条')
   deep.detail.push('角色列表项 ' + roster + '（期望 1）')
   deep.detail.push('AI 对话气泡 ' + aiMsgs + '（期望 2）')
+  deep.detail.push('经验条 ' + xpBars + ' 条，其中升级标记 ' + upMarks + ' 个')
 
   const bad = []
   if (cells !== W * H) bad.push('地图格子数不符')
@@ -304,6 +315,7 @@ async function deepWorkspace() {
   if (rows !== 3) bad.push('战斗记录行数不符')
   if (titles < 5) bad.push('默认布局应至少 5 个面板标题栏（含 AI 对话）')
   if (aiMsgs !== 2) bad.push('AI 面板历史消息未渲染')
+  if (xpBars < 1) bad.push('经验条未渲染（角色行或升级面板）')
   if (splitters < 3) bad.push('分隔条数量不足')
   if (!bad.length) notes.push('深度渲染：地图 ' + cells + ' 格 / ' + toks + ' 单位，记录 ' + rows + ' 行，AI 气泡 ' + aiMsgs + ' 个，面板 ' + panels + ' 个，分隔条 ' + splitters + ' 条')
   else { deep.ok = false; bad.forEach((b) => deep.detail.push('✘ ' + b)) }

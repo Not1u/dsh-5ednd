@@ -1,7 +1,7 @@
-﻿fix(ai): DeepSeek 接入修复 + 省 token 的工具集 + 怪物条目按标题分层匹配
+feat(xp): AI 发经验 + 自动升级提示 + 角色名旁经验条
 
-- fix: 怪物条目查询改为分层排序（标题完全相同 > 以它开头 > 标题包含 > 仅正文包含），
-  并优先官方图鉴；此前 query「地精」会命中「大地精武者」「座狼」
-- feat: 工具集 core/all（默认 core = 35 个，工具清单约 4.3k tokens；全量 64 个），设置面板可选
-- feat(设置): 「测试连接」改为「保存并测试连接」（先保存表单再测，避免填了密钥没保存就测导致误判）
-- 说明：DeepSeek 用 https://api.deepseek.com/v1 + deepseek-chat 已验证可用（含工具调用）
+- host: pc.awardXp（默认每人全额，per:"split" 平分；自动检测跨级并写战斗记录）/ party.xp（全队等级进度与可升级名单）
+- client: XpMini 经验条；角色面板每行会在名字旁显示经验条与 ✨ 升级标记
+- client: 「✨ 升级」面板（升级向导 + 可升级名单 + 经验进度），有人可升级时工作区自动打开该面板并提示
+- 修正: openPanel / commit 改用函数声明（提升），避免 effect 早于初始化调用触发 TDZ —— 被冒烟测试抓到
+- tools.list 与 JSON Schema 登记 pc.awardXp、party.xp 并入 core 工具集；系统提示补充「结算后记得发经验」

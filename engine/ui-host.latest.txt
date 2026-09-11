@@ -1262,6 +1262,8 @@ return {
         T('map.save', '地图', '把当前地图另存为新的 id', { id: 'cave-2', name: '洞内' }),
         T('map.rename', '地图', '给当前地图改名', { name: '潮汐洞' }),
         T('map.delete', '地图', '删除一张地图', { id: 'old' }),
+        T('pc.awardXp', '角色', '给角色加经验（默认每人全额；per:"split" 平分），会返回谁可以升级并写战斗记录', { amount: 200, per: 'each', reason: '清剿崖顶哨兵' }),
+        T('party.xp', '角色', '看全队经验/等级进度与谁可升级', {}),
         T('combat.get', '战斗', '取先攻条与当前回合、行动经济、状态', {}),
         T('combat.start', '战斗', '开始战斗：给 entries 或 auto 从地图+角色卡自动掷先攻并排序', { auto: true, campaign: '凡戴尔的失落矿坑' }),
         T('combat.next', '战斗', '推进回合（跨过一轮自动 +1，并结算该单位的带时状态）', { steps: 1, log: '地精的回合' }),
@@ -1432,6 +1434,8 @@ return {
           },
         }, required: ['ops'],
       },
+      'pc.awardXp': { type: 'object', additionalProperties: true, required: ['amount'], properties: { amount: { type: 'number', description: '经验值，可负' }, per: { type: 'string', enum: ['each', 'split'], description: 'each=每人全额（默认）；split=把 amount 平分给参战者' }, ids: { type: 'array', items: { type: 'string' } }, only: { type: 'string' }, reason: { type: 'string', description: '为什么给（会写进战斗记录）' }, actor: { type: 'string' }, log: { type: 'boolean' } } },
+      'party.xp': { type: 'object', properties: {}, additionalProperties: false },
       'combat.get': { type: 'object', properties: {}, additionalProperties: false },
       'combat.start': {
         type: 'object', additionalProperties: true,
@@ -1480,7 +1484,7 @@ return {
       'tools.list': { type: 'object', properties: {}, additionalProperties: false },
     }
     // 默认只把这些能力暴露给 AI（省 token：全量 58 个工具约 9k prompt tokens/次）
-    const CORE_TOOLS = ['party.list', 'party.sheet', 'pc.apply', 'roll.dice', 'log.list', 'log.append', 'log.set',
+    const CORE_TOOLS = ['party.list', 'party.sheet', 'pc.apply', 'pc.awardXp', 'party.xp', 'levelset.info', 'levelset.apply', 'roll.dice', 'log.list', 'log.append', 'log.set',
       'map.get', 'map.set', 'map.tiles', 'map.list', 'map.use', 'map.token.add', 'map.token.move', 'map.token.update',
       'map.token.remove', 'map.area', 'map.los', 'map.measure', 'map.batch',
       'combat.get', 'combat.start', 'combat.next', 'combat.economy', 'combat.conditions', 'combat.damage', 'combat.end',
@@ -1553,6 +1557,8 @@ return {
       '3d) 放范围法术/技能：map.area（shape+size 或直接给 spell 名）算出覆盖格与命中单位；判掩体与视线用 map.los。',
       '3e) 战斗流程：combat.start（auto 会自己掷先攻）→ 每轮用 combat.next 推进；combat.damage 结算伤害（会同步地图与角色卡）；',
       '    combat.conditions 能加带持续回合的状态（到该单位回合会自动递减并提示结束）；combat.economy 记录动作/附赠/反应/移动。',
+      '3g) 战斗结束/完成任务后记得发经验：pc.awardXp（reason 写清楚，default 每人全额，per:"split" 才平分）；',
+      '    返回值里的 levelUps 表示可以升级——这时告诉玩家「你升级了」并让他在「升级」面板里做选择，不要自己替他选子职/法术。',
       '3f) 需要玩家自己掷骰时（豁免、检定、命中），用 dice.request 弹出提示（写清 expr/label/dc），玩家点一下投完，',
       '    你用 dice.results 读结果（含成功/失败判定）。不要自己替玩家掷这类骰子。',
       '    建议顺序：先 map.los 确认能打（掩体会给 AC 加值），再 map.area 拿命中名单，然后让每个目标掷豁免（roll.dice）、用 pc.apply / map.batch 结算。',
@@ -1977,7 +1983,72 @@ return {
         })
       } catch (e) { return { ok: false, error: String(e && e.message || e) } }
     }))
-    // ===== 先攻条 + 行动经济 + 带持续时间的状态 =====
+    // ===== 经验与升级 =====
+    const xpInfoOf = (srd, pc) => {
+      const level = Math.max(1, Number(pc.level) || 1)
+      const xp = Math.max(0, Number(pc.xp) || 0)
+      const table = (srd.core && srd.core.xpByLevel) || []
+      const next = level < 20 ? (table[level] || null) : null
+      const prev = table[level - 1] || 0
+      const pct = next ? Math.max(0, Math.min(100, Math.round((xp - prev) / Math.max(1, next - prev) * 100))) : 100
+      let target = level
+      while (target < 20 && table[target] != null && xp >= table[target]) target++
+      return { level: level, xp: xp, next: next, prev: prev, pct: pct, canLevel: target > level, targetLevel: target }
+    }
+    const allCharFiles = async () => {
+      try {
+        const fs2 = ctx.get("fs"); const dir = await fs2.resolve(CHAR_DIR)
+        const names = (typeof fs2.listDir === "function") ? (await fs2.listDir(dir)).filter(e => /[.]json$/i.test(e.name)).map(e => e.name) : []
+        const out = []
+        for (const n of names) { try { out.push({ id: n.replace(/[.]json$/i, ""), pc: JSON.parse(await fsRead(CHAR_DIR + "/" + n)) }) } catch (e) { } }
+        return out
+      } catch (e) { return [] }
+    }
+    unreg.push(harness.handle("party.xp", async () => {
+      try {
+        const srd = await loadSrd()
+        const list = (await allCharFiles()).map(x => {
+          const info = xpInfoOf(srd, x.pc)
+          return Object.assign({ id: x.id, name: x.pc.name, classes: (x.pc.classes || []).map(c => c.class + c.level).join("/") }, info)
+        })
+        const ready = list.filter(x => x.canLevel)
+        return jclean({ ok: true, items: list, ready: ready,
+          summary: ready.length ? ("可升级：" + ready.map(x => x.name + " → Lv" + x.targetLevel).join("、")) : "当前无人可升级" })
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle("pc.awardXp", async (args) => {
+      try {
+        const a = args || {}
+        const srd = await loadSrd()
+        const amount = Math.round(Number(a.amount));
+        if (!amount) return { ok: false, error: "需要 amount（经验值，可正可负）" }
+        const files = await allCharFiles()
+        let targets = files
+        if (Array.isArray(a.ids) && a.ids.length) targets = files.filter(x => a.ids.indexOf(x.id) >= 0 || a.ids.indexOf(x.pc.name) >= 0)
+        if (a.only) targets = files.filter(x => x.pc.name === a.only || x.id === a.only)
+        if (!targets.length) return { ok: false, error: "没有找到要加经验的对象（ids/only 都没匹配到）" }
+        const per = (a.per === "split" || a.split) ? "split" : "each"
+        const each = per === "split" ? Math.floor(amount / targets.length) : amount
+        const awards = []
+        for (const t of targets) {
+          const before = xpInfoOf(srd, t.pc)
+          t.pc.xp = Math.max(0, (Number(t.pc.xp) || 0) + each)
+          t.pc.meta = t.pc.meta || {}; t.pc.meta.updatedAt = nowIso()
+          const after = xpInfoOf(srd, t.pc)
+          const r = await persist(t.pc)
+          awards.push({ id: t.id, name: t.pc.name, before: before.xp, after: after.xp, gained: each, level: after.level, next: after.next, pct: after.pct, canLevel: after.canLevel, targetLevel: after.targetLevel, saved: !!r.ok })
+        }
+        const levelUps = awards.filter(x => x.canLevel && x.level < x.targetLevel)
+        if (a.log !== false) {
+          await pushLog([{ kind: "state", actor: a.actor || "DM",
+            text: a.reason || ("获得经验 " + amount + (per === "split" ? "（平分，每人 " + each + "）" : "（每人 " + each + "）")),
+            detail: awards.map(x => x.name + " " + x.before + "→" + x.after + " XP" + (x.canLevel ? (" ✨可升级到 Lv" + x.targetLevel) : ("（距下一级 " + Math.max(0, (x.next || 0) - x.after) + "）"))).join("；") }], {})
+        }
+        return jclean({ ok: true, awards: awards, levelUps: levelUps, per: per, each: each,
+          summary: "经验 +" + each + (per === "split" ? "（每人，共 " + amount + " 平分）" : "（每人）") + "：" + awards.map(x => x.name + " " + x.after + " XP").join("、") + (levelUps.length ? ("｜✨ 可升级：" + levelUps.map(x => x.name + " → Lv" + x.targetLevel).join("、")) : "") })
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    // ===== 先攻条 + 行动经济 + 带持续时间的状态 =====    // ===== 先攻条 + 行动经济 + 带持续时间的状态 =====
     const COMBAT_PATH = ROOT + "/data/combat-state.json"
     const DICE_PATH = ROOT + "/data/dice.json"
     const ECON_KEYS = ["action", "bonus", "reaction", "move"]
