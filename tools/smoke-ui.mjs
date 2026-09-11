@@ -354,6 +354,17 @@ function pureChecks() {
     if (JSON.stringify(a1) !== JSON.stringify(b1)) problems.push('同格微差应当稳定（可复现）')
     if (JSON.stringify(a1) === JSON.stringify(c1)) problems.push('相邻格微差应当不同')
   }
+  // 范围模板：覆盖格渲染 + 图例
+  const TM2 = scope.TERRAIN
+  if (TM2) {
+    const cover2 = Object.keys(TM2).filter(k => TM2[k].cover)
+    if (cover2.length < 3) problems.push('带掩体属性的瓦片应至少 3 种（灌木/树/家具），实际 ' + cover2.length)
+    const solid2 = Object.keys(TM2).filter(k => TM2[k].solid)
+    if (!solid2.includes('#') || !solid2.includes('b') || !solid2.includes('c')) problems.push('墙体类瓦片应标记 solid：#/b/c')
+    const diff2 = Object.keys(TM2).filter(k => TM2[k].difficult)
+    if (diff2.length < 4) problems.push('困难地形瓦片偏少：' + diff2.length)
+    notes.push('瓦片规则：阻挡 ' + solid2.length + ' 种 / 困难 ' + diff2.length + ' 种 / 掩体 ' + cover2.length + ' 种（可支撑视线与掩体判定）')
+  }
   const rp = scope.reorderPanels
   if (typeof rp === 'function') {
     const base = nl(scope.DEFAULT_LAYOUT)

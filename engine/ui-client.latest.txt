@@ -1087,6 +1087,11 @@ function MapPanel(props) {
   const [tile, setTile] = React.useState(props.full ? 40 : 26)
   const [sel, setSel] = React.useState(null)
   const [meas, setMeas] = React.useState({ a: null, b: null })
+  const [areaShape, setAreaShape] = React.useState('sphere')
+  const [areaSize, setAreaSize] = React.useState(20)
+  const [areaDir, setAreaDir] = React.useState('n')
+  const [tpl, setTpl] = React.useState(null)      // 范围模板结果
+  const [losRes, setLosRes] = React.useState(null) // 掩体判定结果
   const [drag, setDrag] = React.useState(null)
   const gridRef = React.useRef(null)
   const fitRef = React.useRef(null)
@@ -1133,12 +1138,24 @@ function MapPanel(props) {
     const r = await call('map.token.move', { id: tk.id, x: c.x, y: c.y })
     if (!r || !r.ok) setErr((r && r.error) || '移动失败')
   }
+  const castArea = async (c) => {
+    const r = await call('map.area', { shape: areaShape, size: areaSize, from: c, dir: areaDir })
+    if (r && r.ok) { setTpl(r); setMsg((r.summary || '') + '（' + areaShape + ' ' + areaSize + ' 尺）') } else setMsg('范围计算失败：' + ((r && r.error) || ''))
+  }
+  const castLos = async (c) => {
+    const tk = sel ? (map.tokens || []).find(t => t.id === sel) : (map.tokens || []).find(t => t.kind === 'pc')
+    if (!tk) { setMsg('先点一个单位（或放一个 pc 单位）再量视线'); return }
+    const r = await call('map.los', { from: { x: tk.x, y: tk.y }, to: c })
+    if (r && r.ok) { setLosRes(r); setMsg(r.summary) } else setMsg('视线判定失败：' + ((r && r.error) || ''))
+  }
   const onCellClick = (c) => {
     if (tool === 'measure') {
       if (!meas.a || (meas.a && meas.b)) setMeas({ a: c, b: null })
       else setMeas({ a: meas.a, b: c })
       return
     }
+    if (tool === 'area') { castArea(c); return }
+    if (tool === 'los') { castLos(c); return }
     if (sel) {
       const tk = (map.tokens || []).find(t => t.id === sel)
       if (tk && (tk.x !== c.x || tk.y !== c.y)) moveToken(tk, c)
@@ -1194,6 +1211,14 @@ function MapPanel(props) {
         title: tk.name + ' @ ' + cellName(px, py) + (tk.hp != null ? ('｜HP ' + tk.hp + (tk.max ? '/' + tk.max : '')) : '') + (tk.speed ? ('｜速度 ' + tk.speed + ' 尺') : '') + (tk.note ? ('｜' + tk.note) : '') + (isDrag ? ('｜正在移动 ' + d.feetStandard + ' 尺') : ''),
       }, h('span', { className: 'tkname' }, tk.name.slice(0, 4)), bar)
     }),
+    (tpl && tpl.cells) ? tpl.cells.filter(c => c.x >= 0 && c.y >= 0 && c.x < map.w && c.y < map.h).map(c => h('div', { key: 't' + c.x + '_' + c.y, style: { position: 'absolute', left: c.x * tile, top: c.y * tile, width: tile, height: tile, background: 'rgba(224,166,74,.28)', border: '1px solid rgba(224,166,74,.55)', pointerEvents: 'none', zIndex: 4 } })) : null,
+    (tpl && tpl.tokens) ? tpl.tokens.map(tk2 => h('div', { key: 'th' + tk2.id, style: { position: 'absolute', left: tk2.x * tile - 2, top: tk2.y * tile - 2, width: tile + 4, height: tile + 4, border: '2px solid #e0a64a', borderRadius: 8, pointerEvents: 'none', zIndex: 8 } })) : null,
+    (losRes && losRes.line) ? h('svg', { className: 'dndp-measure', width: '100%', height: '100%' },
+      h('line', { x1: (losRes.from.x + 0.5) * tile, y1: (losRes.from.y + 0.5) * tile, x2: (losRes.to.x + 0.5) * tile, y2: (losRes.to.y + 0.5) * tile, stroke: losRes.blocked ? '#d3564b' : '#5ec27a', strokeWidth: 2, strokeDasharray: '6 4' }),
+      (losRes.blockers || []).map((b, i) => h('rect', { key: 'b' + i, x: b.x * tile + 2, y: b.y * tile + 2, width: tile - 4, height: tile - 4, fill: 'none', stroke: '#d3564b', strokeWidth: 2 })),
+      h('circle', { cx: (losRes.from.x + 0.5) * tile, cy: (losRes.from.y + 0.5) * tile, r: 4, fill: losRes.blocked ? '#d3564b' : '#5ec27a' })) : null,
+    (losRes && losRes.to) ? h('div', { className: 'dndp-mlabel', style: { left: ((losRes.from.x + losRes.to.x) / 2 + 0.5) * tile, top: ((losRes.from.y + losRes.to.y) / 2 + 0.5) * tile - 14, borderColor: losRes.blocked ? '#d3564b' : '#5ec27a' } }, losRes.fromCell + '→' + losRes.toCell + '：' + (losRes.blocked ? '视线被挡' : losRes.coverLabel) + ' · ' + losRes.feet + ' 尺') : null,
+    (tpl && tpl.cells && tpl.cells.length) ? h('div', { className: 'dndp-mlabel', style: { left: (tpl.from.x + 0.5) * tile, top: (tpl.from.y + 0.5) * tile - 16, borderColor: '#e0a64a' } }, tpl.label + '：' + tpl.cellCount + ' 格' + (tpl.tokenCount ? (' · 命中 ' + tpl.tokenCount) : '')) : null,
     (md && m1 && m2) ? h('svg', { className: 'dndp-measure', width: '100%', height: '100%' },
       h('line', { x1: (m1.x + 0.5) * tile, y1: (m1.y + 0.5) * tile, x2: (m2.x + 0.5) * tile, y2: (m2.y + 0.5) * tile, stroke: 'var(--dsw-alias-brand-primary)', strokeWidth: 2, strokeDasharray: '5 4' }),
       h('circle', { cx: (m1.x + 0.5) * tile, cy: (m1.y + 0.5) * tile, r: 4, fill: 'var(--dsw-alias-brand-primary)' }),
@@ -1225,7 +1250,15 @@ function MapPanel(props) {
     h('span', { className: 'dndp-chip' }, map.w + '×' + map.h + ' 格（每格 5 尺）'),
     h('button', { className: 'dndp-btn tiny' + (tool === 'move' ? ' primary' : ''), onClick: () => setTool('move') }, '移动'),
     h('button', { className: 'dndp-btn tiny' + (tool === 'measure' ? ' primary' : ''), onClick: () => { setTool('measure'); setMeas({ a: null, b: null }) } }, '测距'),
-    h('button', { className: 'dndp-btn tiny', onClick: () => { setMeas({ a: null, b: null }); setSel(null); setMsg('') } }, '清除选点'),
+    h('button', { className: 'dndp-btn tiny' + (tool === 'area' ? ' primary' : ''), title: '点格子放范围模板', onClick: () => { setTool('area'); setMeas({ a: null, b: null }); setLosRes(null) } }, '范围'),
+    h('button', { className: 'dndp-btn tiny' + (tool === 'los' ? ' primary' : ''), title: '以选中单位为起点，点目标格判视线/掩体', onClick: () => { setTool('los'); setTpl(null) } }, '掩体'),
+    tool === 'area' ? h('select', { className: 'dndp-input', style: { width: 78, flex: 'none' }, value: areaShape, onChange: e => setAreaShape(e.target.value) },
+      [['sphere', '球'], ['cone', '锥'], ['line', '线'], ['cube', '立方'], ['cylinder', '柱']].map(x => h('option', { key: x[0], value: x[0] }, x[1]))) : null,
+    tool === 'area' ? h('select', { className: 'dndp-input', style: { width: 84, flex: 'none' }, value: String(areaSize), onChange: e => setAreaSize(Number(e.target.value)) },
+      [5, 10, 15, 20, 30, 60, 100].map(v => h('option', { key: v, value: String(v) }, v + ' 尺'))) : null,
+    (tool === 'area' && (areaShape === 'cone' || areaShape === 'line')) ? h('select', { className: 'dndp-input', style: { width: 62, flex: 'none' }, value: areaDir, onChange: e => setAreaDir(e.target.value) },
+      [['n', '↑'], ['ne', '↗'], ['e', '→'], ['se', '↘'], ['s', '↓'], ['sw', '↙'], ['w', '←'], ['nw', '↖']].map(x => h('option', { key: x[0], value: x[0] }, x[1]))) : null,
+    h('button', { className: 'dndp-btn tiny', onClick: () => { setMeas({ a: null, b: null }); setTpl(null); setLosRes(null); setSel(null); setMsg('') } }, '清除选点'),
     h('button', { className: 'dndp-btn tiny' + (fit ? ' primary' : ''), onClick: () => setFit(!fit), title: '格子自动缩放到填满面板' }, '自适应'),
     h('span', { className: 'dndp-note' }, '格距'),
     h('input', { type: 'range', min: 12, max: 72, value: tile, onChange: e => { setFit(false); setTile(Number(e.target.value)) }, style: { width: 92 } }),

@@ -1251,6 +1251,8 @@ return {
         T('map.save', '地图', '把当前地图另存为新的 id', { id: 'cave-2', name: '洞内' }),
         T('map.rename', '地图', '给当前地图改名', { name: '潮汐洞' }),
         T('map.delete', '地图', '删除一张地图', { id: 'old' }),
+        T('map.area', '地图', '施法范围模板：给 shape+size（或 spell 名）与 from，算出覆盖哪些格、命中哪些单位', { shape: 'sphere|cone|line|cube|cylinder', size: 20, from: { x: 8, y: 6 }, dir: 'n|ne|e|se|s|sw|w|nw', to: { x: 12, y: 10 } }),
+        T('map.los', '地图', '视线与掩体判定：两点之间是否被墙挡住、目标有几成掩体（无/半掩体+2/四分之三+5）', { from: { x: 3, y: 8 }, to: { x: 9, y: 4 } }),
         T('map.batch', '地图', '一次做完一串地图变更（移动/改数值/增删单位/改地形，可顺带写战斗记录）——AI 跑敌人回合用这个', { ops: [{ move: { id: '地精A', x: 4, y: 5 } }, { update: { id: '地精A', patch: { hp: 3 } } }], log: '地精A 冲向布洛林', actor: 'DM' }),
         T('map.set', '地图', '整张地图替换/新建（AI 布景入口）', { w: 24, h: 14, name: '', terrain: ['....', '####'], tokens: [{ name: '地精', kind: 'enemy', x: 3, y: 2, hp: 7, max: 7, speed: 30 }] }),
         T('map.terrain.set', '地图', '改地形：整行、整片或按格 [{x,y,t}]', { cells: [{ x: 3, y: 4, t: '#' }] }),
@@ -1407,6 +1409,19 @@ return {
           },
         }, required: ['ops'],
       },
+      'map.area': {
+        type: 'object', additionalProperties: true,
+        properties: {
+          shape: { type: 'string', enum: ['sphere', 'cone', 'line', 'cube', 'cylinder'], description: '球/锥/线/立方/柱' },
+          size: { type: 'number', description: '尺寸（尺）：球与柱=半径，锥与线=长度，立方=边长' },
+          spell: { type: 'string', description: '也可以直接给法术名（火球术/燃烧之手/闪电束/蛛网术…），自动取形状与尺寸' },
+          from: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'], description: '球/柱/立方=中心格；锥/线=起点格' },
+          dir: { type: 'string', enum: ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'], description: '锥/线的朝向（给了 to 就按 to 的实际角度）' },
+          to: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } } },
+          log: { type: 'string', description: '可选：同时写一条战斗记录' }, actor: { type: 'string' },
+        }, required: ['from'],
+      },
+      'map.los': { type: 'object', additionalProperties: false, properties: { from: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'] }, to: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'] } }, required: ['from', 'to'] },
       'map.measure': { type: 'object', additionalProperties: false, properties: { from: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'] }, to: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'] } }, required: ['from', 'to'] },
       'rules.search': { type: 'object', additionalProperties: false, properties: { query: { type: 'string', description: '空格分隔的关键词，AND 关系' }, book: { type: 'string' }, limit: { type: 'number' } }, required: ['query'] },
       'rules.read': { type: 'object', additionalProperties: false, properties: { id: { type: 'string', description: '来自 rules.search 的 id' } }, required: ['id'] },
@@ -1479,6 +1494,8 @@ return {
       '3) 伤害/治疗/状态变化用 pc.apply（hp 用增量，log 写一句说明）；地图上的移动用 map.token.move。',
       '3b) 敌人/NPC 的一整个回合用 map.batch 一次做完（多个 move/update/add/remove + log），可带 actor 与 log 文本。',
       '3c) 换场景：map.list 看已有地图，map.use 切换；新场地用 map.create（或 map.set 直接铺地形与单位）。地形字符先查 map.tiles。',
+      '3d) 放范围法术/技能：map.area（shape+size 或直接给 spell 名）算出覆盖格与命中单位；判掩体与视线用 map.los。',
+      '    建议顺序：先 map.los 确认能打（掩体会给 AC 加值），再 map.area 拿命中名单，然后让每个目标掷豁免（roll.dice）、用 pc.apply / map.batch 结算。',
       '4) 需要摆场景时用 map.set / map.token.add 把地形与单位放到地图上，玩家就能在侧栏直接看到并拖动。',
       '5) 叙事用中文，简洁有画面感。推进到需要玩家做决定的地方就停下，把选择交给玩家，不要替玩家决定行动。',
       '6) 玩家操纵的角色由玩家说了算；NPC 与怪物由你代为行动与判定。',
@@ -1753,7 +1770,148 @@ return {
         return jclean(Object.assign(mapView(map), { ok: true, applied: done.length, changes: done, saved: !!wr.ok, saveError: wr.error || "", summary: done.join("；").slice(0, 300) }))
       } catch (e) { return { ok: false, error: String(e && e.message || e) } }
     }))
-    // ===== 主题（界面配色）：存 data/theme.json =====    // ===== 主题（界面配色）：存 data/theme.json =====
+    // ===== 施法范围模板 + 视线/掩体 =====
+    const DIR_VEC = { n: [0, -1], ne: [1, -1], e: [1, 0], se: [1, 1], s: [0, 1], sw: [-1, 1], w: [-1, 0], nw: [-1, -1] }
+    const SHAPES = { sphere: 1, cylinder: 1, cube: 1, cone: 1, line: 1 }
+    // 常见法术 → 形状/尺寸（尺）。AI 可以直接给 spell 名，也可以给 shape+size。
+    const SPELL_AREAS = {
+      '火球术': { shape: 'sphere', size: 20 }, '火球': { shape: 'sphere', size: 20 },
+      '燃烧之手': { shape: 'cone', size: 15 }, '冰霜射线': { shape: 'sphere', size: 5 },
+      '闪电束': { shape: 'line', size: 100 }, '闪电束(5e)': { shape: 'line', size: 100 },
+      '蛛网术': { shape: 'cube', size: 20 }, '臭云术': { shape: 'sphere', size: 20 },
+      '云雾术': { shape: 'sphere', size: 20 }, '黑暗术': { shape: 'sphere', size: 15 },
+      '沉默术': { shape: 'sphere', size: 20 }, '睡眠术': { shape: 'sphere', size: 20 },
+      '纠缠术': { shape: 'cube', size: 20 }, '荆棘丛生': { shape: 'cube', size: 20 },
+      '荆棘之墙': { shape: 'line', size: 60 }, '火墙术': { shape: 'line', size: 60 },
+      '冰风暴': { shape: 'cylinder', size: 20 }, '驱散魔法': { shape: 'sphere', size: 10 },
+      '雷霆波': { shape: 'cube', size: 15 }, '恐惧术': { shape: 'cone', size: 30 },
+      '寒冰锥': { shape: 'cone', size: 60 }, '音鸣爆': { shape: 'sphere', size: 10 },
+      '圣火术': { shape: 'cylinder', size: 10 }, '灼热金属': { shape: 'cube', size: 5 },
+    }
+    const areaCells = (shape, sizeFt, from, dirKey, to) => {
+      const sizeCells = Math.max(1, Math.round(Number(sizeFt) / 5))
+      const cells = []
+      const fx = Math.floor(from.x), fy = Math.floor(from.y)
+      if (shape === "cone" || shape === "line") {
+        // 角度：用 to 的话按实际方向，否则取 8 向
+        let ang = null
+        if (to) ang = Math.atan2(Math.floor(to.y) - fy, Math.floor(to.x) - fx)
+        else { const v = DIR_VEC[dirKey] || DIR_VEC.n; ang = Math.atan2(v[1], v[0]) }
+        const ux = Math.cos(ang), uy = Math.sin(ang)
+        if (shape === "line") {
+          for (let k = 0; k < sizeCells; k++) {
+            const px = fx + ux * k, py = fy + uy * k
+            cells.push({ x: Math.round(px), y: Math.round(py) })
+          }
+        } else {
+          const half = Math.atan(0.5)   // 5e 锥形：末端宽度 ≈ 长度
+          const R = sizeCells + 0.5
+          for (let dy = -sizeCells - 1; dy <= sizeCells + 1; dy++) {
+            for (let dx = -sizeCells - 1; dx <= sizeCells + 1; dx++) {
+              if (dx === 0 && dy === 0) { cells.push({ x: fx, y: fy }); continue }
+              const dist = Math.sqrt(dx * dx + dy * dy)
+              if (dist > R) continue
+              let da = Math.atan2(dy, dx) - ang
+              while (da > Math.PI) da -= Math.PI * 2
+              while (da < -Math.PI) da += Math.PI * 2
+              if (Math.abs(da) <= half + 1e-6) cells.push({ x: fx + dx, y: fy + dy })
+            }
+          }
+        }
+      } else if (shape === "cube") {
+        const lo = -Math.floor((sizeCells - 1) / 2), hi = lo + sizeCells - 1
+        for (let dy = lo; dy <= hi; dy++) for (let dx = lo; dx <= hi; dx++) cells.push({ x: fx + dx, y: fy + dy })
+      } else {
+        const R = sizeCells + 0.5
+        for (let dy = -sizeCells - 1; dy <= sizeCells + 1; dy++) {
+          for (let dx = -sizeCells - 1; dx <= sizeCells + 1; dx++) {
+            if (Math.sqrt(dx * dx + dy * dy) <= R) cells.push({ x: fx + dx, y: fy + dy })
+          }
+        }
+      }
+      const seen = {}
+      return cells.filter(c => { const k = c.x + "," + c.y; if (seen[k]) return false; seen[k] = 1; return true })
+    }
+    const losSamples = (a, b) => {
+      const out = []
+      const steps = Math.max(2, Math.round(Math.max(Math.abs(b.x - a.x), Math.abs(b.y - a.y)) * 2))
+      for (let k = 0; k <= steps; k++) {
+        const t = k / steps
+        out.push({ x: Math.floor(a.x + (b.x - a.x) * t + 0.5), y: Math.floor(a.y + (b.y - a.y) * t + 0.5) })
+      }
+      return out
+    }
+    const adjacentTo = (c, p) => Math.abs(c.x - p.x) <= 1 && Math.abs(c.y - p.y) <= 1
+    unreg.push(harness.handle("map.area", async (args) => {
+      try {
+        const a = args || {}
+        const map = await readMap()
+        let shape = String(a.shape || "").toLowerCase()
+        let size = Number(a.size) || 0
+        if ((!shape || !size) && a.spell) {
+          const sp = SPELL_AREAS[a.spell] || Object.keys(SPELL_AREAS).find(k => a.spell.indexOf(k) >= 0) ? (SPELL_AREAS[a.spell] || SPELL_AREAS[Object.keys(SPELL_AREAS).find(k => a.spell.indexOf(k) >= 0)]) : null
+          if (sp) { shape = shape || sp.shape; size = size || sp.size }
+        }
+        if (!SHAPES[shape]) return { ok: false, error: "shape 需要 sphere|cylinder|cube|cone|line（或给 spell 名）" }
+        if (!size) return { ok: false, error: "需要 size（尺）或 spell 名" }
+        const from = a.from || {}
+        if (from.x == null || from.y == null) return { ok: false, error: "需要 from:{x,y}（格坐标）" }
+        const all = areaCells(shape, size, { x: Number(from.x), y: Number(from.y) }, String(a.dir || "n").toLowerCase(), a.to || null)
+        const cells = all.filter(c => c.x >= 0 && c.y >= 0 && c.x < map.w && c.y < map.h)
+        const inCells = (t) => cells.some(c => c.x === Math.floor(t.x) && c.y === Math.floor(t.y))
+        const hit = (map.tokens || []).filter(t => !t.hidden && inCells(t))
+        const solidHit = cells.map(c => (TILE_BY_CHAR[(map.terrain[c.y] || "")[c.x]] || {}).solid).filter(Boolean).length
+        const label = ({ sphere: "球", cylinder: "柱", cube: "立方", cone: "锥", line: "线" })[shape] + " " + size + " 尺"
+        if (a.log) await pushLog([{ kind: "narrate", actor: a.actor || "DM", text: a.log, detail: label + " 覆盖 " + cells.length + " 格；范围内：" + (hit.map(t => t.name + "(" + cellName(t.x, t.y) + ")").join("、") || "无单位") }], {})
+        return jclean({
+          ok: true, shape: shape, size: size, label: label, from: { x: Number(from.x), y: Number(from.y) },
+          cells: cells, cellCount: cells.length, cellsText: cells.length + " 格（约 " + (cells.length * 25) + " 平方尺）",
+          tokens: hit.map(t => ({ id: t.id, name: t.name, kind: t.kind, x: t.x, y: t.y, cell: cellName(t.x, t.y), hp: t.hp, max: t.max })),
+          tokenCount: hit.length, solidCells: solidHit,
+          summary: label + " → " + cells.length + " 格，命中 " + hit.length + " 个单位" + (hit.length ? "（" + hit.map(t => t.name).join("、") + "）" : "") + (solidHit ? "｜其中 " + solidHit + " 格是墙" : ""),
+        })
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle("map.los", async (args) => {
+      try {
+        const a = args || {}
+        const map = await readMap()
+        const at = (c) => ({ x: Number(c && c.x), y: Number(c && c.y) })
+        const from = at(a.from), to = at(a.to)
+        if (isNaN(from.x) || isNaN(to.x)) return { ok: false, error: "需要 from/to:{x,y}" }
+        const line = losSamples(from, to)
+        const blockers = []
+        for (const s2 of line) {
+          if (adjacentTo(s2, from) || adjacentTo(s2, to)) continue   // 贴着自己/目标的格子可以"探身"看
+          const td = TILE_BY_CHAR[(map.terrain[s2.y] || "")[s2.x]]
+          if (td && td.solid) { const k = s2.x + "," + s2.y; if (!blockers.some(b => b.x === s2.x && b.y === s2.y)) blockers.push({ x: s2.x, y: s2.y, cell: cellName(s2.x, s2.y), tile: td.name }) }
+        }
+        const targetTile = TILE_BY_CHAR[(map.terrain[to.y] || "")[to.x]] || { name: "?", cover: 0 }
+        let cover = 0
+        const why = []
+        if (targetTile.cover) { cover += targetTile.cover; why.push("目标所在格是" + targetTile.name) }
+        // 半掩体：射线旁紧贴的墙/柱，或走廊两侧有墙
+        const flank = line.some((s3) => {
+          if (adjacentTo(s3, to)) return false
+          const n4 = [{ x: s3.x + 1, y: s3.y }, { x: s3.x - 1, y: s3.y }, { x: s3.x, y: s3.y + 1 }, { x: s3.x, y: s3.y - 1 }]
+          return n4.some(n => { const td = TILE_BY_CHAR[(map.terrain[n.y] || "")[n.x]]; return td && td.solid })
+        })
+        if (flank && cover < 2) { cover += 2; why.push("射线旁有墙体/岩柱") }
+        const blocked = blockers.length > 0
+        // 掩体档位：0 无 / 2 半掩体(+2) / 4+ 四分之三掩体(+5)；全掩体 = 看不到
+        const acBonus = cover >= 4 ? 5 : (cover >= 2 ? 2 : 0)
+        const coverLabel = blocked ? "全掩体（不可目视/不可指定）" : (acBonus === 5 ? "四分之三掩体（AC +5）" : acBonus === 2 ? "半掩体（AC +2）" : "无掩体")
+        const dist = cellDist(from, to)
+        return jclean({
+          ok: true, visible: !blocked, blocked: blocked, blockers: blockers,
+          from: from, to: to, fromCell: cellName(from.x, from.y), toCell: cellName(to.x, to.y),
+          feet: dist.feetStandard, cells: dist.cells, cover: blocked ? null : acBonus, coverTier: cover, coverLabel: coverLabel, why: why,
+          line: line,
+          summary: cellName(from.x, from.y) + " → " + cellName(to.x, to.y) + "：" + dist.feetStandard + " 尺｜" + (blocked ? ("视线被挡（" + blockers.map(b => b.cell + " " + b.tile).join("、") + "）") : ("视线通畅，" + coverLabel + (why.length ? "（" + why.join("；") + "）" : ""))),
+        })
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    // ===== 主题（界面配色）：存 data/theme.json =====    // ===== 主题（界面配色）：存 data/theme.json =====    // ===== 主题（界面配色）：存 data/theme.json =====
     const THEME_PATH = ROOT + '/data/theme.json'
     const THEME_PRESETS = {
       azure: { name: 'azure', label: '幽蓝', accent: '#5aa0ff' },
