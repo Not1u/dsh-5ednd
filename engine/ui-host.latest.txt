@@ -681,6 +681,28 @@ return {
       const detail = raw + (advantage ? (' ' + advantage) : '') + ' → [' + kept.join(', ') + ']' + (flat ? (flat > 0 ? ' +' + flat : ' ' + flat) : '') + (dropped.length ? ' 弃[' + dropped.join(', ') + ']' : '') + ' = ' + total
       return { ok: true, expr: raw, advantage: advantage || null, dice: kept, dropped: dropped, flat: flat, total: total, detail: detail }
     }
+    const pushLog = async (list, meta) => {
+      const log = await readLog()
+      const m = meta || {}
+      if (m.campaign) log.campaign = String(m.campaign)
+      if (m.round != null && m.round !== '') log.round = Math.max(0, Number(m.round) || 0)
+      const made = []
+      for (const raw of (list || [])) {
+        log.seq = (Number(log.seq) || 0) + 1
+        const e = {
+          id: 'e' + log.seq, seq: log.seq, t: raw.t || nowIso(),
+          round: (raw.round != null && raw.round !== '') ? Number(raw.round) : (Number(log.round) || 0),
+          kind: raw.kind || 'narrate', actor: raw.actor || '', text: raw.text || '',
+          expr: raw.expr || '', advantage: raw.advantage || null, dice: raw.dice || [], dropped: raw.dropped || [],
+          flat: Number(raw.flat) || 0, total: (raw.total == null || raw.total === '') ? null : Number(raw.total), detail: raw.detail || '',
+        }
+        log.entries.push(e)
+        made.push(e)
+      }
+      if (log.entries.length > 800) log.entries = log.entries.slice(-800)
+      const w = await writeLog(log)
+      return { made: made, round: log.round, campaign: log.campaign, saved: !!w.ok, saveError: w.error || '' }
+    }
     unreg.push(harness.handle('roll.dice', async (args) => {
       try {
         const a = args || {}
@@ -688,13 +710,9 @@ return {
         const r = rollExpr(a.expr, adv)
         if (!r.ok) return r
         if (a.append === false) return { ok: true, total: r.total, detail: r.detail, entry: null }
-        const log = await readLog()
-        log.seq = (Number(log.seq) || 0) + 1
-        const entry = { id: 'e' + log.seq, seq: log.seq, t: nowIso(), round: Number(log.round) || 0, kind: a.kind || 'roll', actor: a.actor || '', text: a.label || '', expr: r.expr, advantage: r.advantage, dice: r.dice, dropped: r.dropped, flat: r.flat, total: r.total, detail: r.detail }
-        log.entries.push(entry)
-        if (log.entries.length > 800) log.entries = log.entries.slice(-800)
-        const w = await writeLog(log)
-        return { ok: true, total: r.total, detail: r.detail, entry: entry, round: log.round, saved: !!w.ok, saveError: w.error || '' }
+        const entry = { kind: a.kind || 'roll', actor: a.actor || '', text: a.label || '', expr: r.expr, advantage: r.advantage, dice: r.dice, dropped: r.dropped, flat: r.flat, total: r.total, detail: r.detail }
+        const res = await pushLog([entry], {})
+        return { ok: true, total: r.total, detail: r.detail, entry: res.made[0] || null, round: res.round, saved: res.saved, saveError: res.saveError || '' }
       } catch (e) { return { ok: false, error: String(e && e.message || e) } }
     }))
     unreg.push(harness.handle('log.list', async (args) => {
@@ -710,25 +728,8 @@ return {
         const a = args || {}
         const list = Array.isArray(a.entries) ? a.entries : (a.entry ? [a.entry] : (a.text ? [a] : []))
         if (!list.length) return { ok: false, error: '无内容可追加' }
-        const log = await readLog()
-        if (a.campaign) log.campaign = String(a.campaign)
-        if (a.round != null && a.round !== '') log.round = Math.max(0, Number(a.round) || 0)
-        const made = []
-        for (const raw of list) {
-          log.seq = (Number(log.seq) || 0) + 1
-          const e = {
-            id: 'e' + log.seq, seq: log.seq, t: raw.t || nowIso(),
-            round: (raw.round != null && raw.round !== '') ? Number(raw.round) : (Number(log.round) || 0),
-            kind: raw.kind || 'narrate', actor: raw.actor || '', text: raw.text || '',
-            expr: raw.expr || '', advantage: raw.advantage || null, dice: raw.dice || [], dropped: raw.dropped || [],
-            flat: Number(raw.flat) || 0, total: (raw.total == null || raw.total === '') ? null : Number(raw.total), detail: raw.detail || '',
-          }
-          log.entries.push(e)
-          made.push(e)
-        }
-        if (log.entries.length > 800) log.entries = log.entries.slice(-800)
-        const w = await writeLog(log)
-        return { ok: true, added: made.length, round: log.round, ids: made.map(e => e.id), saved: !!w.ok, saveError: w.error || '' }
+        const res = await pushLog(list, a)
+        return { ok: true, added: res.made.length, round: res.round, ids: res.made.map(e => e.id), saved: res.saved, saveError: res.saveError || '' }
       } catch (e) { return { ok: false, error: String(e && e.message || e) } }
     }))
     unreg.push(harness.handle('log.set', async (args) => {
@@ -747,6 +748,192 @@ return {
         const log = { campaign: a.campaign || '', round: 0, seq: 0, entries: [] }
         const w = await writeLog(log)
         return { ok: true, cleared: true, saved: !!w.ok, saveError: w.error || '' }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    // ===== 战术地图（5 尺格）=====
+    // 地形图例（每格 1 字符）：
+    //   . 地面   # 岩壁/墙   ~ 溪水(困难)   , 灌木/荆棘(困难·半掩体)   ^ 高地/崖顶(高差)
+    //   o 洞口/黑暗   + 门   = 木板/桥   T 树(半掩体)   ! 篝火/光源   x 碎石/废墟   ' ' 虚空
+    const MAP_PATH = ROOT + '/data/map.json'
+    const TERRAIN_KEYS = ['.', '#', '~', ',', '^', 'o', '+', '=', 'T', '!', 'x', ' ']
+    const cellName = (x, y) => {
+      let s = '', n = Math.max(0, Math.floor(x))
+      do { s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26) - 1 } while (n >= 0)
+      return s + (Math.floor(y) + 1)
+    }
+    // 5e 距离：简化式（对角=5尺） 与 标准式（每第二格对角 10 尺，5-10-5）
+    const cellDist = (a, b) => {
+      const dx = Math.abs(Math.floor(a.x) - Math.floor(b.x)), dy = Math.abs(Math.floor(a.y) - Math.floor(b.y))
+      const mx = Math.max(dx, dy), mn = Math.min(dx, dy)
+      return { cells: mx, feetSimple: mx * 5, feetStandard: (mx + Math.floor(mn / 2)) * 5 }
+    }
+    const sanitizeTerrain = (rows, w, h) => {
+      const out = []
+      for (let y = 0; y < h; y++) {
+        let row = Array.isArray(rows) && typeof rows[y] === 'string' ? rows[y] : ''
+        row = row.split('').map(c => TERRAIN_KEYS.includes(c) ? c : '.').join('')
+        if (row.length < w) row = row + '.'.repeat(w - row.length)
+        out.push(row.slice(0, w))
+      }
+      return out
+    }
+    const readMap = async () => {
+      try {
+        const j = JSON.parse(await fsRead(MAP_PATH))
+        if (j && Array.isArray(j.terrain)) {
+          const w = Math.max(4, Math.min(80, Number(j.w) || 24))
+          const h = Math.max(4, Math.min(60, Number(j.h) || 16))
+          return { name: j.name || '', campaign: j.campaign || '', w: w, h: h, cell: Number(j.cell) || 5, terrain: sanitizeTerrain(j.terrain, w, h), tokens: Array.isArray(j.tokens) ? j.tokens : [], updatedAt: j.updatedAt || null }
+        }
+      } catch (e) { }
+      return { name: '', campaign: '', w: 24, h: 16, cell: 5, terrain: sanitizeTerrain([], 24, 16), tokens: [], updatedAt: null }
+    }
+    const writeMap = async (map) => {
+      map.updatedAt = nowIso()
+      const txt = JSON.stringify(map, null, 2)
+      if (typeof DND5E_WRITE === 'function') {
+        try { const r = await DND5E_WRITE(MAP_PATH, txt); if (r && r.ok) return { ok: true } } catch (e) { }
+      }
+      try {
+        const fs = ctx.get('fs')
+        const t = await fs.resolve(MAP_PATH)
+        if (fs && typeof fs.writeText === 'function') { await fs.writeText(t, txt); return { ok: true } }
+      } catch (e) { }
+      return { ok: false, error: '写入 data/map.json 失败（无可用写通道）' }
+    }
+    const mapView = (map) => ({
+      ok: true, name: map.name, campaign: map.campaign, w: map.w, h: map.h, cell: map.cell,
+      terrain: map.terrain, tokens: map.tokens, updatedAt: map.updatedAt,
+      legend: [
+        ['.', '地面'], ['#', '岩壁/墙'], ['~', '溪水·困难'], [',', '荆棘·困难+半掩体'], ['^', '高地/崖顶'],
+        ['o', '洞口/黑暗'], ['+', '门'], ['=', '木板/桥'], ['T', '树·半掩体'], ['!', '篝火/光源'], ['x', '碎石/废墟'], [' ', '虚空'],
+      ],
+    })
+    unreg.push(harness.handle('map.get', async () => {
+      try { return mapView(await readMap()) } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('map.set', async (args) => {
+      try {
+        const a = args || {}
+        const cur = await readMap()
+        const w = Math.max(4, Math.min(80, Number(a.w) || cur.w))
+        const h = Math.max(4, Math.min(60, Number(a.h) || cur.h))
+        const terrain = sanitizeTerrain(a.terrain || cur.terrain, w, h)
+        const tokens = Array.isArray(a.tokens) ? a.tokens.map(tk => ({
+          id: String(tk.id || ('t' + Math.random().toString(36).slice(2, 8))),
+          name: String(tk.name || '?'), kind: tk.kind || 'enemy',
+          x: Math.max(0, Math.min(w - 1, Number(tk.x) || 0)), y: Math.max(0, Math.min(h - 1, Number(tk.y) || 0)),
+          color: tk.color || null, hp: (tk.hp == null ? null : Number(tk.hp)), max: (tk.max == null ? null : Number(tk.max)),
+          speed: (tk.speed == null ? 30 : Number(tk.speed)), size: Math.max(1, Math.min(4, Number(tk.size) || 1)),
+          note: tk.note || '', hidden: !!tk.hidden,
+        })) : (Array.isArray(a.replaceTokens) && a.replaceTokens ? [] : cur.tokens)
+        const next = { name: a.name != null ? String(a.name) : cur.name, campaign: a.campaign != null ? String(a.campaign) : cur.campaign, w: w, h: h, cell: Number(a.cell) || cur.cell || 5, terrain: terrain, tokens: tokens, updatedAt: null }
+        const wr = await writeMap(next)
+        return Object.assign(mapView(next), { saved: !!wr.ok, saveError: wr.error || '' })
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('map.terrain.set', async (args) => {
+      try {
+        const a = args || {}
+        const map = await readMap()
+        if (typeof a.terrain === 'string' && a.y != null) {
+          const y = Math.max(0, Math.min(map.h - 1, Number(a.y)))
+          const rows = map.terrain.slice()
+          rows[y] = (a.terrain + '.'.repeat(map.w)).slice(0, map.w)
+          map.terrain = sanitizeTerrain(rows, map.w, map.h)
+        } else if (Array.isArray(a.terrain)) {
+          map.terrain = sanitizeTerrain(a.terrain, map.w, map.h)
+        } else if (Array.isArray(a.cells)) {
+          const rows = map.terrain.map(r => r.split(''))
+          for (const c of a.cells) {
+            const x = Number(c.x), y = Number(c.y)
+            if (y >= 0 && y < map.h && x >= 0 && x < map.w) rows[y][x] = TERRAIN_KEYS.includes(c.t) ? c.t : '.'
+          }
+          map.terrain = rows.map(r => r.join(''))
+        } else return { ok: false, error: '需要 terrain 数组、terrain+y 的字符串，或 cells[{x,y,t}]' }
+        const wr = await writeMap(map)
+        return Object.assign(mapView(map), { saved: !!wr.ok, saveError: wr.error || '' })
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('map.token.add', async (args) => {
+      try {
+        const a = args || {}
+        const map = await readMap()
+        const tk = a.token || a
+        const token = {
+          id: String(tk.id || ('t' + Math.random().toString(36).slice(2, 8))),
+          name: String(tk.name || '?'), kind: tk.kind || 'enemy',
+          x: Math.max(0, Math.min(map.w - 1, Number(tk.x) || 0)), y: Math.max(0, Math.min(map.h - 1, Number(tk.y) || 0)),
+          color: tk.color || null, hp: (tk.hp == null ? null : Number(tk.hp)), max: (tk.max == null ? null : Number(tk.max)),
+          speed: (tk.speed == null ? 30 : Number(tk.speed)), size: Math.max(1, Math.min(4, Number(tk.size) || 1)),
+          note: tk.note || '', hidden: !!tk.hidden,
+        }
+        map.tokens = map.tokens.filter(t => t.id !== token.id).concat([token])
+        const wr = await writeMap(map)
+        return { ok: true, id: token.id, token: token, count: map.tokens.length, saved: !!wr.ok, saveError: wr.error || '' }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('map.token.move', async (args) => {
+      try {
+        const a = args || {}
+        const map = await readMap()
+        const tk = map.tokens.find(t => t.id === String(a.id)) || map.tokens.find(t => t.name === String(a.id))
+        if (!tk) return { ok: false, error: '找不到单位：' + a.id }
+        const from = { x: tk.x, y: tk.y }
+        const to = { x: Math.max(0, Math.min(map.w - 1, Number(a.x))), y: Math.max(0, Math.min(map.h - 1, Number(a.y))) }
+        tk.x = to.x; tk.y = to.y
+        if (a.note != null) tk.note = String(a.note)
+        const wr = await writeMap(map)
+        const d = cellDist(from, to)
+        let logged = null
+        if (a.log !== false && (from.x !== to.x || from.y !== to.y)) {
+          const over = tk.speed ? Math.max(0, d.feetStandard - Number(tk.speed)) : 0
+          const res = await pushLog([{
+            kind: 'move', actor: tk.name,
+            text: cellName(from.x, from.y) + ' → ' + cellName(to.x, to.y) + (tk.kind === 'pc' ? '' : '（' + (tk.kind === 'enemy' ? '敌方' : '友方') + '）'),
+            detail: '移动 ' + d.feetStandard + ' 尺（' + d.cells + ' 格；对角简化 ' + d.feetSimple + ' 尺）' + (over ? '｜超出速度 ' + tk.speed + ' 尺 ' + over + ' 尺' : ''),
+          }], {})
+          logged = res.made[0] ? res.made[0].id : null
+        }
+        return { ok: true, id: tk.id, x: tk.x, y: tk.y, from: from, to: to, cells: d.cells, feet: d.feetStandard, feetSimple: d.feetSimple, excess: tk.speed ? Math.max(0, d.feetStandard - Number(tk.speed)) : 0, logged: logged, saved: !!wr.ok, saveError: wr.error || '' }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('map.token.update', async (args) => {
+      try {
+        const a = args || {}
+        const map = await readMap()
+        const tk = map.tokens.find(t => t.id === String(a.id))
+        if (!tk) return { ok: false, error: '找不到单位：' + a.id }
+        const p = a.patch || {}
+        for (const k of ['name', 'kind', 'color', 'note']) if (p[k] != null) tk[k] = String(p[k])
+        for (const k of ['hp', 'max', 'speed', 'x', 'y', 'size']) if (p[k] != null && p[k] !== '') tk[k] = Number(p[k])
+        if (p.hidden != null) tk.hidden = !!p.hidden
+        const wr = await writeMap(map)
+        return { ok: true, id: tk.id, token: tk, saved: !!wr.ok, saveError: wr.error || '' }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('map.token.remove', async (args) => {
+      try {
+        const a = args || {}
+        const map = await readMap()
+        const before = map.tokens.length
+        map.tokens = map.tokens.filter(t => t.id !== String(a.id) && t.name !== String(a.id))
+        const wr = await writeMap(map)
+        return { ok: true, removed: before - map.tokens.length, count: map.tokens.length, saved: !!wr.ok, saveError: wr.error || '' }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('map.clear', async () => {
+      try {
+        const map = { name: '', campaign: '', w: 24, h: 16, cell: 5, terrain: sanitizeTerrain([], 24, 16), tokens: [], updatedAt: null }
+        const wr = await writeMap(map)
+        return Object.assign(mapView(map), { saved: !!wr.ok, saveError: wr.error || '' })
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('map.measure', async (args) => {
+      try {
+        const a = args || {}
+        const d = cellDist({ x: Number(a.from && a.from.x) || 0, y: Number(a.from && a.from.y) || 0 }, { x: Number(a.to && a.to.x) || 0, y: Number(a.to && a.to.y) || 0 })
+        return { ok: true, from: a.from, to: a.to, cells: d.cells, feet: d.feetStandard, feetSimple: d.feetSimple, summary: d.cells + ' 格 · ' + d.feetStandard + ' 尺（5-10-5 规则；对角简化 ' + d.feetSimple + ' 尺）' }
       } catch (e) { return { ok: false, error: String(e && e.message || e) } }
     }))
     return () => { unreg.forEach(f => f()) }

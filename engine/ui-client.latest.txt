@@ -1,4 +1,4 @@
-// v17 client — 战斗记录 / 骰子面板（骰子直接落盘 data/combat-log.json，DM 与玩家共用一份）
+// v18 client — 战术地图（5尺格 / 地形 / 可拖动单位 / 测距 / 速度范围）+ 战斗记录 + 骰子
 const h = React.createElement
 // —— 统一传输层：优先走同源 HTTP 桥（profile 常驻插件 /dnd5e/api，可直接落盘），
 //    不可用时回退动态插件的 host.call。
@@ -113,6 +113,7 @@ const css = `
 .dndp-logk.k-heal{color:#3f9e63;border-color:#3f9e6366}
 .dndp-logk.k-narr{color:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary)}
 .dndp-logk.k-turn{color:#8a63d2;border-color:#8a63d266}
+.dndp-logk.k-move{color:#2f8f8f;border-color:#2f8f8f66}
 .dndp-logmain{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
 .dndp-logline{display:flex;gap:7px;align-items:baseline;flex-wrap:wrap}
 .dndp-logr{font-size:11px;color:var(--dsw-alias-label-secondary);border:1px solid var(--dsw-alias-border-l1);border-radius:5px;padding:0 5px}
@@ -122,6 +123,42 @@ const css = `
 .dndp-time{flex:none;font-size:11px;color:var(--dsw-alias-label-secondary);margin-top:2px}
 .dndp-mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 .dndp-filters{display:flex;gap:6px;flex-wrap:wrap;padding:8px 12px 2px}
+.dndp-mapwrap{position:relative;overflow:auto;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-1)}
+.dndp-mapgrid{display:grid;position:relative;width:max-content}
+.dndp-cell{width:var(--dndp-tile);height:var(--dndp-tile);box-sizing:border-box;border-right:1px solid rgba(128,128,128,.18);border-bottom:1px solid rgba(128,128,128,.18);position:relative;display:flex;align-items:center;justify-content:center;font-size:10px;color:rgba(160,160,160,.55);cursor:crosshair}
+.dndp-cell.g-ground{background:#3a3d42}
+.dndp-cell.g-wall{background:#1b1e22}
+.dndp-cell.g-water{background:#2a4a6b}
+.dndp-cell.g-brush{background:#2d4a30}
+.dndp-cell.g-high{background:#5a4a32}
+.dndp-cell.g-cave{background:#0e0f13}
+.dndp-cell.g-door{background:#6b5330}
+.dndp-cell.g-plank{background:#4a3a22}
+.dndp-cell.g-tree{background:#204021}
+.dndp-cell.g-fire{background:#6b4a20}
+.dndp-cell.g-rubble{background:#403b34}
+.dndp-cell.g-void{background:#07080a}
+.dndp-cell.msel{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px;z-index:3}
+.dndp-tok{position:absolute;box-sizing:border-box;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;border:2px solid rgba(255,255,255,.85);box-shadow:0 2px 6px rgba(0,0,0,.5);cursor:grab;user-select:none;z-index:5;line-height:1}
+.dndp-tok.drag{cursor:grabbing;z-index:9;opacity:.9}
+.dndp-tok.k-pc{background:#2b6cb0}
+.dndp-tok.k-enemy{background:#b03030}
+.dndp-tok.k-ally{background:#2f7d4f}
+.dndp-tok.k-object{background:#5b5b66}
+.dndp-tok .tkname{font-size:9px;font-weight:600;max-width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;padding:0 2px}
+.dndp-tok.sel{outline:3px solid #fff;outline-offset:1px}
+.dndp-tokbar{position:absolute;left:12%;right:12%;bottom:-5px;height:3px;background:rgba(0,0,0,.55);border-radius:2px;overflow:hidden}
+.dndp-tokbar i{display:block;height:100%;background:#5ec27a}
+.dndp-tokbar.low i{background:#e0a03a}
+.dndp-tokbar.crit i{background:#d3564b}
+.dndp-measure{position:absolute;inset:0;pointer-events:none;z-index:7}
+.dndp-mlabel{position:absolute;transform:translate(-50%,-50%);background:var(--dsw-alias-bg-overlay);border:1px solid var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary);border-radius:7px;padding:2px 7px;font-size:11px;white-space:nowrap;z-index:8;pointer-events:none}
+.dndp-maptools{display:flex;gap:7px;align-items:center;flex-wrap:wrap;padding:8px 10px}
+.dndp-legend{display:flex;gap:4px 10px;flex-wrap:wrap;padding:6px 12px 10px;font-size:11px;color:var(--dsw-alias-label-secondary)}
+.dndp-legend span.sw{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:4px;vertical-align:-1px;border:1px solid var(--dsw-alias-border-l2)}
+.dndp-overlay{position:fixed;inset:0;z-index:2147483000;background:rgba(0,0,0,.72);display:flex;flex-direction:column}
+.dndp-overlay .dndp-ovhead{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--dsw-alias-bg-layer-2);border-bottom:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-primary);font-weight:600}
+.dndp-overlay .dndp-ovbody{flex:1;overflow:auto;padding:12px;background:var(--dsw-alias-bg-base)}
 `
 const AB = ['str', 'dex', 'con', 'int', 'wis', 'cha']
 const ABF = { str: '力量', dex: '敏捷', con: '体质', int: '智力', wis: '感知', cha: '魅力' }
@@ -711,7 +748,7 @@ function Wizard(props) {
 const LOGK = {
   roll: { n: '骰子', c: 'k-roll' }, attack: { n: '攻击', c: 'k-atk' }, damage: { n: '伤害', c: 'k-dmg' },
   heal: { n: '治疗', c: 'k-heal' }, narrate: { n: '叙述', c: 'k-narr' }, turn: { n: '轮次', c: 'k-turn' },
-  state: { n: '状态', c: 'k-state' }, down: { n: '倒地', c: 'k-dmg' }, dm: { n: 'DM', c: 'k-narr' }, player: { n: '玩家', c: 'k-turn' },
+  move: { n: '移动', c: 'k-move' }, state: { n: '状态', c: 'k-state' }, down: { n: '倒地', c: 'k-dmg' }, dm: { n: 'DM', c: 'k-narr' }, player: { n: '玩家', c: 'k-turn' },
 }
 function logPresets(s) {
   const out = []
@@ -835,6 +872,147 @@ function LogView(props) {
   if (all.length > 200) body.push(h('div', { key: 'more', className: 'dndp-note' }, '仅显示最近 200 条（共 ' + all.length + ' 条）'))
   return h('div', { className: 'dndp-root' }, h('div', { className: 'dndp-header' }, head), h('div', { className: 'dndp-scroll' }, body))
 }
+const TERRAIN = {
+  '.': { k: 'ground', n: '地面', solid: false, difficult: false },
+  '#': { k: 'wall', n: '岩壁/墙', solid: true },
+  '~': { k: 'water', n: '溪水·困难', solid: false, difficult: true },
+  ',': { k: 'brush', n: '荆棘·困难+半掩体', solid: false, difficult: true, cover: 2 },
+  '^': { k: 'high', n: '高地/崖顶', solid: false },
+  'o': { k: 'cave', n: '洞口/黑暗', solid: false },
+  '+': { k: 'door', n: '门', solid: false },
+  '=': { k: 'plank', n: '木板/桥', solid: false },
+  'T': { k: 'tree', n: '树·半掩体', solid: false, cover: 2 },
+  '!': { k: 'fire', n: '篝火/光源', solid: false },
+  'x': { k: 'rubble', n: '碎石/废墟', solid: false, difficult: true },
+  ' ': { k: 'void', n: '虚空/未开', solid: true },
+}
+const cellName = (x, y) => {
+  let s = '', n = Math.max(0, Math.floor(x))
+  do { s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26) - 1 } while (n >= 0)
+  return s + (Math.floor(y) + 1)
+}
+function cellDist(a, b) {
+  const dx = Math.abs(a.x - b.x), dy = Math.abs(a.y - b.y)
+  const mx = Math.max(dx, dy), mn = Math.min(dx, dy)
+  return { cells: mx, feetSimple: mx * 5, feetStandard: (mx + Math.floor(mn / 2)) * 5 }
+}
+function MapPanel(props) {
+  const [map, setMap] = React.useState(null)
+  const [err, setErr] = React.useState('')
+  const [msg, setMsg] = React.useState('')
+  const [tool, setTool] = React.useState('move')
+  const [tile, setTile] = React.useState(props.full ? 40 : 26)
+  const [sel, setSel] = React.useState(null)
+  const [meas, setMeas] = React.useState({ a: null, b: null })
+  const [drag, setDrag] = React.useState(null)
+  const gridRef = React.useRef(null)
+  const load = () => call('map.get', {}).then(r => { if (r && r.ok) { setMap(r); setErr('') } else setErr((r && r.error) || '读取地图失败') }).catch(e => setErr(String(e && e.message || e)))
+  React.useEffect(() => { load() }, [])
+  React.useEffect(() => {
+    const t = (typeof setInterval === 'function') ? setInterval(() => { if (!drag) load() }, 4000) : null
+    return () => { if (t) clearInterval(t) }
+  }, [drag])
+  const cellFromEvent = (ev) => {
+    const el = gridRef.current
+    if (!el) return null
+    const r = el.getBoundingClientRect()
+    const x = Math.floor((ev.clientX - r.left) / tile)
+    const y = Math.floor((ev.clientY - r.top) / tile)
+    if (!map || x < 0 || y < 0 || x >= map.w || y >= map.h) return null
+    return { x, y }
+  }
+  const moveToken = async (tk, c) => {
+    const d = cellDist({ x: tk.x, y: tk.y }, c)
+    const over = tk.speed ? d.feetStandard - tk.speed : 0
+    setMap(m => Object.assign({}, m, { tokens: (m.tokens || []).map(t => t.id === tk.id ? Object.assign({}, t, { x: c.x, y: c.y }) : t) }))
+    setMsg(tk.name + ' ' + cellName(tk.x, tk.y) + ' → ' + cellName(c.x, c.y) + '：' + d.feetStandard + ' 尺（' + d.cells + ' 格）' + (over > 0 ? ' ⚠ 超出速度 ' + tk.speed + ' 尺，超 ' + over + ' 尺' : '') + '，已记入战斗记录')
+    const r = await call('map.token.move', { id: tk.id, x: c.x, y: c.y })
+    if (!r || !r.ok) setErr((r && r.error) || '移动失败')
+  }
+  const onCellClick = (c) => {
+    if (tool === 'measure') {
+      if (!meas.a || (meas.a && meas.b)) setMeas({ a: c, b: null })
+      else setMeas({ a: meas.a, b: c })
+      return
+    }
+    if (sel) {
+      const tk = (map.tokens || []).find(t => t.id === sel)
+      if (tk && (tk.x !== c.x || tk.y !== c.y)) moveToken(tk, c)
+      return
+    }
+    setMsg('先点一个单位图标选中它（或用拖动直接移动），再点目标格 = 走过去。')
+  }
+  const onTokDown = (ev, tk) => {
+    if (tool !== 'move') { setSel(tk.id); return }
+    ev.preventDefault()
+    setSel(tk.id)
+    setDrag({ id: tk.id, from: { x: tk.x, y: tk.y }, cur: { x: tk.x, y: tk.y } })
+  }
+  React.useEffect(() => {
+    if (!drag) return undefined
+    const onMove = (ev) => { const c = cellFromEvent(ev); if (c) setDrag(d => d ? Object.assign({}, d, { cur: c }) : d) }
+    const onUp = (ev) => {
+      const c = cellFromEvent(ev)
+      const tk = (map.tokens || []).find(t => t.id === drag.id)
+      if (tk && c && (c.x !== drag.from.x || c.y !== drag.from.y)) moveToken(tk, c)
+      setDrag(null)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    return () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp) }
+  }, [drag, map, tile])
+  if (!map) return h('div', { className: 'dndp-root' }, h('div', { className: 'dndp-header' }, h('span', { className: 'dndp-ic' }, '🗺'), h('span', null, '战术地图'), h('div', { className: 'dndp-sp' }), err ? h('span', { className: 'dndp-chip' }, err) : h('span', { className: 'dndp-chip' }, '加载中…')))
+  const tokens = (map.tokens || []).filter(t => !t.hidden)
+  const cells = []
+  for (let y = 0; y < map.h; y++) {
+    const row = (map.terrain[y] || '.'.repeat(map.w)).split('')
+    for (let x = 0; x < map.w; x++) {
+      const ch = row[x] || '.'
+      const td = TERRAIN[ch] || TERRAIN['.']
+      cells.push(h('div', { key: x + '-' + y, className: 'dndp-cell g-' + td.k, onClick: () => onCellClick({ x, y }), title: cellName(x, y) + ' · ' + td.n + (td.cover ? '（AC+2）' : '') }))
+    }
+  }
+  const m1 = meas.a, m2 = meas.b
+  const md = (m1 && m2) ? cellDist(m1, m2) : null
+  const grid = h('div', { ref: gridRef, className: 'dndp-mapgrid', style: { gridTemplateColumns: 'repeat(' + map.w + ', var(--dndp-tile))', '--dndp-tile': tile + 'px', position: 'relative' } },
+    cells,
+    tokens.map(tk => {
+      const size = (Number(tk.size) || 1)
+      const isDrag = drag && drag.id === tk.id
+      const px = isDrag ? drag.cur.x : tk.x, py = isDrag ? drag.cur.y : tk.y
+      const bar = (tk.hp != null && tk.max) ? (() => { const pct = Math.max(0, Math.min(100, Math.round(tk.hp / tk.max * 100))); return h('div', { className: 'dndp-tokbar' + (pct <= 25 ? ' crit' : (pct <= 50 ? ' low' : '')) }, h('i', { style: { width: pct + '%' } })) })() : null
+      const d = isDrag ? cellDist(drag.from, drag.cur) : null
+      return h('div', {
+        key: tk.id,
+        className: 'dndp-tok k-' + (tk.kind || 'enemy') + (isDrag ? ' drag' : '') + (sel === tk.id ? ' sel' : ''),
+        style: { left: px * tile + 2, top: py * tile + 2, width: size * tile - 4, height: size * tile - 4, background: tk.color || undefined, zIndex: isDrag ? 20 : 5 },
+        onPointerDown: e => onTokDown(e, tk),
+        title: tk.name + ' @ ' + cellName(px, py) + (tk.hp != null ? ('｜HP ' + tk.hp + (tk.max ? '/' + tk.max : '')) : '') + (tk.speed ? ('｜速度 ' + tk.speed + ' 尺') : '') + (tk.note ? ('｜' + tk.note) : '') + (isDrag ? ('｜正在移动 ' + d.feetStandard + ' 尺') : ''),
+      }, h('span', { className: 'tkname' }, tk.name.slice(0, 4)), bar)
+    }),
+    (md && m1 && m2) ? h('svg', { className: 'dndp-measure', width: '100%', height: '100%' },
+      h('line', { x1: (m1.x + 0.5) * tile, y1: (m1.y + 0.5) * tile, x2: (m2.x + 0.5) * tile, y2: (m2.y + 0.5) * tile, stroke: 'var(--dsw-alias-brand-primary)', strokeWidth: 2, strokeDasharray: '5 4' }),
+      h('circle', { cx: (m1.x + 0.5) * tile, cy: (m1.y + 0.5) * tile, r: 4, fill: 'var(--dsw-alias-brand-primary)' }),
+      h('circle', { cx: (m2.x + 0.5) * tile, cy: (m2.y + 0.5) * tile, r: 4, fill: 'var(--dsw-alias-brand-primary)' })) : null,
+    (md && m1 && m2) ? h('div', { className: 'dndp-mlabel', style: { left: ((m1.x + m2.x) / 2 + 0.5) * tile, top: ((m1.y + m2.y) / 2 + 0.5) * tile } }, cellName(m1.x, m1.y) + '→' + cellName(m2.x, m2.y) + '：' + md.feetStandard + ' 尺 / ' + md.cells + ' 格') : null,
+    (sel && map.tokens.find(t => t.id === sel)) ? (() => { const tk = map.tokens.find(t => t.id === sel); const reach = tk.speed ? Math.floor(tk.speed / 5) : 6; const ring = []; for (let dy = -reach; dy <= reach; dy++) for (let dx = -reach; dx <= reach; dx++) { const c = { x: tk.x + dx, y: tk.y + dy }; if (c.x < 0 || c.y < 0 || c.x >= map.w || c.y >= map.h) continue; const dd = cellDist({ x: tk.x, y: tk.y }, c); if (dd.feetStandard > 0 && dd.feetStandard <= tk.speed) ring.push(h('div', { key: 'r' + dx + '_' + dy, style: { position: 'absolute', left: c.x * tile, top: c.y * tile, width: tile, height: tile, background: 'rgba(90,160,255,.16)', border: '1px solid rgba(90,160,255,.25)', pointerEvents: 'none', zIndex: 4 } })) } return ring })() : null)
+  const tools = h('div', { className: 'dndp-maptools' },
+    h('span', { className: 'dndp-chip' }, map.name || '未命名地图'),
+    h('span', { className: 'dndp-chip' }, map.w + '×' + map.h + ' 格（每格 5 尺）'),
+    h('button', { className: 'dndp-btn tiny' + (tool === 'move' ? ' primary' : ''), onClick: () => setTool('move') }, '移动'),
+    h('button', { className: 'dndp-btn tiny' + (tool === 'measure' ? ' primary' : ''), onClick: () => { setTool('measure'); setMeas({ a: null, b: null }) } }, '测距'),
+    h('button', { className: 'dndp-btn tiny', onClick: () => { setMeas({ a: null, b: null }); setSel(null); setMsg('') } }, '清除选点'),
+    h('span', { className: 'dndp-note' }, '格距'),
+    h('input', { type: 'range', min: 16, max: 60, value: tile, onChange: e => setTile(Number(e.target.value)), style: { width: 92 } }),
+    h('span', { className: 'dndp-note' }, tile + 'px'),
+    h('button', { className: 'dndp-btn tiny', onClick: load }, '刷新'),
+    props.onToggleFull ? h('button', { className: 'dndp-btn tiny', onClick: props.onToggleFull }, props.full ? '退出全屏' : '⤢ 全屏') : null)
+  const legend = h('div', { className: 'dndp-legend' }, h('span', null, '图例：'), (map.legend || Object.keys(TERRAIN).map(k => [k, TERRAIN[k].n])).map((L, i) => h('span', { key: i }, h('span', { className: 'sw g-' + ((TERRAIN[L[0]] || {}).k || 'void') }), L[1])))
+  const body = [tools, h('div', { key: 'm', style: { padding: '0 10px 10px' } }, h('div', { className: 'dndp-mapwrap', style: { maxHeight: props.full ? 'none' : 420 } }, grid)), msg ? h('div', { key: 'g', className: 'dndp-note hl', style: { padding: '0 12px' } }, msg) : null, err ? h('div', { key: 'e', className: 'dndp-err' }, err) : null, legend,
+    h('div', { key: 't', className: 'dndp-note', style: { padding: '0 12px 12px' } }, '用法：拖动图标移动单位（自动按 5 尺格换算距离并写入战斗记录）；点「测距」后点两格看距离；选中单位会显示其速度范围（蓝色水波纹区）。')]
+  if (props.full) return h('div', { className: 'dndp-overlay' }, h('div', { className: 'dndp-ovhead' }, h('span', { className: 'dndp-ic' }, '🗺'), h('span', null, '战术地图 — ' + (map.name || '未命名')), h('div', { className: 'dndp-sp' }), h('button', { className: 'dndp-btn', onClick: props.onToggleFull }, '关闭（Esc）')), h('div', { className: 'dndp-ovbody' }, body))
+  return h('div', { className: 'dndp-root' }, h('div', { className: 'dndp-header' }, h('span', { className: 'dndp-ic' }, '🗺'), h('span', null, '战术地图'), h('div', { className: 'dndp-sp' }), h('button', { className: 'dndp-btn', onClick: props.onBack }, '返回')), h('div', { className: 'dndp-scroll' }, body))
+}
 function PartyView() {
   const [mode, setMode] = React.useState('list')
   const [list, setList] = React.useState(null)
@@ -842,18 +1020,27 @@ function PartyView() {
   const [busy, setBusy] = React.useState(false)
   const [sel, setSel] = React.useState(null)
   const [loading, setLoading] = React.useState(false)
+  const [mapFull, setMapFull] = React.useState(false)
   function refresh() { setBusy(true); setErr(''); call('party.list', {}).then(r => { if (r && r.ok) setList(r.items); else setErr((r && r.error) || 'list failed') }).catch(e => setErr(String(e && e.message || e))).then(() => setBusy(false)) }
   function open(id) { setLoading(true); setErr(''); call('party.sheet', { id }).then(r => { if (r && r.ok) setSel(r.sheet); else setErr((r && r.error) || 'sheet failed') }).catch(e => setErr(String(e && e.message || e))).then(() => setLoading(false)) }
   React.useEffect(() => { refresh() }, [])
+  React.useEffect(() => {
+    if (!mapFull) return undefined
+    const onKey = (e) => { if (e.key === 'Escape') setMapFull(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [mapFull])
+  if (mapFull) return h(Boundary, null, h(MapPanel, { full: true, onToggleFull: () => setMapFull(false) }))
   if (mode === 'build') return h(Boundary, null, h(Wizard, { onDone: () => { setMode('list'); refresh() }, onBack: () => setMode('list') }))
   if (mode === 'log') return h(Boundary, null, h(LogView, { party: list || [], onBack: () => { setMode('list'); refresh() } }))
-  if (sel) return h('div', { className: 'dndp-root' }, h('div', { className: 'dndp-header' }, h('span', { className: 'dndp-ic' }, '⚔'), h('span', null, sel.name), h('div', { className: 'dndp-sp' }), h(XpWidget, { s: sel }), h('button', { className: 'dndp-btn', onClick: () => setMode('log') }, '🎲 战斗记录'), h('button', { className: 'dndp-btn', onClick: () => setSel(null) }, '返回列表')), h('div', { className: 'dndp-scroll' }, loading ? h('div', { className: 'dndp-empty' }, '加载中…') : h(Boundary, null, h(Detail, { s: sel, onReload: () => { open(sel.id); refresh() } }))))
+  if (mode === 'map') return h(Boundary, null, h(MapPanel, { onBack: () => { setMode('list'); refresh() }, onToggleFull: () => setMapFull(true) }))
+  if (sel) return h('div', { className: 'dndp-root' }, h('div', { className: 'dndp-header' }, h('span', { className: 'dndp-ic' }, '⚔'), h('span', null, sel.name), h('div', { className: 'dndp-sp' }), h(XpWidget, { s: sel }), h('button', { className: 'dndp-btn', onClick: () => setMode('map') }, '🗺 地图'), h('button', { className: 'dndp-btn', onClick: () => setMode('log') }, '🎲 战斗记录'), h('button', { className: 'dndp-btn', onClick: () => setSel(null) }, '返回列表')), h('div', { className: 'dndp-scroll' }, loading ? h('div', { className: 'dndp-empty' }, '加载中…') : h(Boundary, null, h(Detail, { s: sel, onReload: () => { open(sel.id); refresh() } }))))
   const rows = []
   if (busy || loading) rows.push(h('div', { key: 'b', className: 'dndp-empty' }, '加载中…'))
   if (err) rows.push(h('div', { key: 'e', className: 'dndp-err' }, err))
   if (list && !list.length) rows.push(h('div', { key: 'z', className: 'dndp-empty' }, '暂无角色，点“+ 新建角色”'))
   ;(list || []).forEach((l, i) => rows.push(h('div', { key: i, className: 'dndp-row', onClick: () => open(l.id) }, h('div', { className: 'dndp-ava' }, (l.name || '?').slice(0, 1)), h('div', { className: 'dndp-main' }, h('div', { className: 'dndp-name' }, l.name), h('div', { className: 'dndp-sub' }, (l.race || '') + (l.cls ? ' · ' + l.cls : ''))), h('span', { className: 'dndp-chip' }, 'L' + l.level), h('span', { className: 'dndp-chip' }, 'HP ' + l.hp + '/' + l.max))))
-  return h('div', { className: 'dndp-root' }, h('div', { className: 'dndp-header' }, h('span', { className: 'dndp-ic' }, '⚔'), h('span', null, 'D&D 5e 角色'), h('div', { className: 'dndp-sp' }), h(UiBadge, null), h('button', { className: 'dndp-btn', onClick: () => setMode('log') }, '🎲 战斗记录'), h('button', { className: 'dndp-btn primary', onClick: () => setMode('build') }, '+ 新建角色')), h('div', { className: 'dndp-scroll' }, rows))
+  return h('div', { className: 'dndp-root' }, h('div', { className: 'dndp-header' }, h('span', { className: 'dndp-ic' }, '⚔'), h('span', null, 'D&D 5e 角色'), h('div', { className: 'dndp-sp' }), h(UiBadge, null), h('button', { className: 'dndp-btn', onClick: () => setMode('map') }, '🗺 地图'), h('button', { className: 'dndp-btn', onClick: () => setMode('log') }, '🎲 战斗记录'), h('button', { className: 'dndp-btn primary', onClick: () => setMode('build') }, '+ 新建角色')), h('div', { className: 'dndp-scroll' }, rows))
 }
 return {
   apply(ctx) {

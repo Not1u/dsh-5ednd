@@ -4,7 +4,7 @@
   "name": "格瑞姆贝尔·石心",
   "player": "示例玩家三",
   "level": 1,
-  "xp": 67,
+  "xp": 84,
   "alignment": null,
   "race": "dwarf/mountain",
   "classes": [
@@ -138,7 +138,7 @@
     "schemaVersion": "dnd5e.character.v1",
     "campaign": null,
     "createdAt": "2026-09-09T15:43:42.598Z",
-    "updatedAt": "2026-09-10T15:30:07.596Z"
+    "updatedAt": "2026-09-11T05:49:12.986Z"
   },
   "equipment": {
     "armor": {

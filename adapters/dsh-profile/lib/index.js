@@ -8,7 +8,7 @@
 import path from 'node:path'
 import fsSync from 'node:fs'
 import { writeFile, mkdir } from 'node:fs/promises'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 export const name = 'dsh-5ednd'
 export const inject = ['webServer', 'fs']
@@ -22,7 +22,57 @@ const OPS = [
   'levelset.info', 'levelset.apply', 'sheet.equip', 'sheet.item.add', 'sheet.item.remove',
   'sheet.condition.set', 'sheet.pack.take', 'sheet.patch', 'multiclass.add', 'rules.stats', 'rules.search', 'rules.read', 'ui.source',
   'roll.dice', 'log.list', 'log.append', 'log.set', 'log.clear',
+  'map.get', 'map.set', 'map.terrain.set', 'map.token.add', 'map.token.move', 'map.token.update', 'map.token.remove', 'map.clear', 'map.measure',
 ]
+
+// ===== 扩展插件目录：<repoRoot>/plugins/*.mjs =====
+// 每个插件模块可导出 { name, ops: { 'x.y': async (args, api) => ... } }，
+// 也可导出 setup(api)（返回值里的 ops 同样会被合并）。
+// api 提供：{ repoRoot, call(op,args), readJson(rel), writeJson(rel,obj), list(), log(msg) }
+// 这让第三方/自建功能无需改核心代码即可挂到同一座桥上（侧栏 UI 与 AI 共用）。
+const PLUGIN_DIR_NAME = 'plugins'
+const pluginCache = new Map()
+
+export function makePluginLoader(repoRoot, callOp, writeText) {
+  const dir = path.join(repoRoot, PLUGIN_DIR_NAME)
+  const readJson = async (rel) => {
+    const txt = await fsSync.promises.readFile(path.join(repoRoot, rel), 'utf8')
+    return JSON.parse(txt.charCodeAt(0) === 0xfeff ? txt.slice(1) : txt)
+  }
+  const api = {
+    repoRoot,
+    call: callOp,
+    readJson,
+    writeJson: async (rel, obj) => writeText(path.join(repoRoot, rel), JSON.stringify(obj, null, 2)),
+    log: (m) => { try { console.log('[dsh-5ednd plugin] ' + m) } catch (e) { } },
+  }
+  return async function loadPlugins() {
+    const ops = {}
+    const list = []
+    let names = []
+    try { names = fsSync.readdirSync(dir).filter((f) => /\.m?js$/.test(f) && !/^_/.test(f)) } catch (e) { return { ops, list, api } }
+    for (const n of names) {
+      const full = path.join(dir, n)
+      try {
+        const mt = fsSync.statSync(full).mtimeMs
+        let c = pluginCache.get(n)
+        if (!c || c.mtimeMs !== mt) {
+          const mod = await import(pathToFileURL(full).href + '?m=' + mt)
+          const init = mod && mod.default && typeof mod.default.setup === 'function' ? mod.default : mod
+          let modOps = (mod && mod.ops) || {}
+          if (init && typeof init.setup === 'function') modOps = Object.assign({}, modOps, (await init.setup(api)) || {})
+          c = { mtimeMs: mt, ops: modOps, name: (mod && mod.name) || n.replace(/\.m?js$/, '') }
+          pluginCache.set(n, c)
+        }
+        list.push({ file: n, name: c.name, ops: Object.keys(c.ops) })
+        for (const k of Object.keys(c.ops)) ops[k] = c.ops[k]
+      } catch (e) {
+        list.push({ file: n, name: '(加载失败)', ops: [], error: String((e && e.message) || e) })
+      }
+    }
+    return { ops, list, api }
+  }
+}
 
 function sendJson(res, status, payload) {
   const text = JSON.stringify(payload)
@@ -91,9 +141,19 @@ export function apply(ctx, config = {}) {
         if (!op) return sendJson(res, 400, { ok: false, error: 'op required' })
         try {
           ensure()
-          const fn = rec[op]
+          const loadPlugins = makePluginLoader(repoRoot, async (name, a) => {
+            ensure()
+            const f = rec[name]
+            if (typeof f !== 'function') throw new Error('unknown op: ' + name)
+            return f(a || {})
+          }, writeText)
+          const ext = await loadPlugins()
+          if (op === 'ext.list') {
+            return sendJson(res, 200, { ok: true, value: { core: OPS.concat(Object.keys(rec)).filter((v, i, arr) => arr.indexOf(v) === i), plugins: ext.list, pluginOps: Object.keys(ext.ops) } })
+          }
+          const fn = rec[op] || ext.ops[op]
           if (typeof fn !== 'function') return sendJson(res, 200, { ok: false, error: 'unknown op: ' + op })
-          const value = await fn(args || {})
+          const value = op in rec ? await fn(args || {}) : await fn(args || {}, ext.api)
           return sendJson(res, 200, { ok: true, value: value === undefined ? null : value })
         } catch (e) {
           return sendJson(res, 200, { ok: false, error: String(e && e.message || e) })

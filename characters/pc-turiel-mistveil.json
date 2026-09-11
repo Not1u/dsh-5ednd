@@ -4,7 +4,7 @@
   "name": "图里尔·雾纱",
   "player": "示例玩家二",
   "level": 1,
-  "xp": 67,
+  "xp": 84,
   "alignment": "中立善良",
   "race": "elf/high",
   "classes": [
@@ -81,7 +81,7 @@
     "note": "法术名录(spells.json)待接入；本轮先验证施法派生值"
   },
   "hp": {
-    "current": 7,
+    "current": 3,
     "max": 7,
     "temp": 0,
     "hitDiceTotal": "1d6",
@@ -132,7 +132,7 @@
     "schemaVersion": "dnd5e.character.v1",
     "campaign": null,
     "createdAt": "2025-01-02T00:00:00Z",
-    "updatedAt": "2026-09-10T15:30:07.920Z"
+    "updatedAt": "2026-09-11T05:49:12.981Z"
   },
   "equipment": {
     "armor": null,
