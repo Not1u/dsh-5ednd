@@ -1,4 +1,4 @@
-// v20 client — 战术地图（5尺格 / 地形 / 可拖动单位 / 测距 / 速度范围）+ 战斗记录 + 骰子
+// v21 client — 战术地图（5尺格 / 地形 / 可拖动单位 / 测距 / 速度范围）+ 战斗记录 + 骰子
 const h = React.createElement
 // —— 统一传输层：优先走同源 HTTP 桥（profile 常驻插件 /dnd5e/api，可直接落盘），
 //    不可用时回退动态插件的 host.call。
@@ -211,6 +211,38 @@ const css = `
 .dndp-setrow label{font-size:12px;color:var(--dsw-alias-label-secondary)}
 .dndp-setrow .hint{font-size:11px;color:var(--dsw-alias-label-secondary)}
 .dndp-warn{font-size:11px;color:#d9a03a;border:1px dashed #d9a03a66;border-radius:8px;padding:6px 8px;margin-bottom:9px}
+/* ===== 拖动 + 动效 ===== */
+.dndp-ws.dragging{cursor:grabbing}
+.dndp-ptitle{cursor:grab}
+.dndp-ptitle.dragging{cursor:grabbing;opacity:.6}
+.dndp-panel{position:relative;transition:border-color .16s ease,box-shadow .16s ease,background .16s ease;animation:dndpIn .2s ease-out}
+.dndp-panel:hover{border-color:var(--dsw-alias-border-l2)}
+.dndp-panel.dragsrc{opacity:.55;border-style:dashed}
+.dndp-drop{background:var(--dsw-alias-brand-primary);border-radius:3px;box-shadow:0 0 8px var(--dsw-alias-brand-primary);z-index:2147483001;pointer-events:none;animation:dndpBar .14s ease-out}
+@keyframes dndpBar{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:none}}
+.dndp-dragghost{position:fixed;z-index:2147483002;pointer-events:none;border:1px solid var(--dsw-alias-brand-primary);background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);border-radius:8px;padding:4px 10px;font-size:12px;font-weight:600;box-shadow:0 10px 26px rgba(0,0,0,.55);transform:translate(-50%,-140%);white-space:nowrap;animation:dndpIn .12s ease-out}
+.dndp-slot{transition:background .16s ease,outline-color .16s ease;outline:1px dashed transparent;outline-offset:-2px;border-radius:9px}
+.dndp-slot.glow{background:rgba(90,160,255,.09);outline-color:var(--dsw-alias-brand-primary)}
+.dndp-slotwrap.slim .dndp-empty{font-size:11px}
+@keyframes dndpIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+@keyframes dndpPop{from{opacity:0;transform:translateY(-4px) scale(.98)}to{opacity:1;transform:none}}
+.dndp-pmenu{animation:dndpPop .13s ease-out}
+.dndp-btn{transition:background .14s ease,border-color .14s ease,transform .08s ease,opacity .14s ease}
+.dndp-btn:active:not(:disabled){transform:scale(.965)}
+.dndp-pbtn{transition:background .13s ease,color .13s ease,transform .08s ease,opacity .13s ease}
+.dndp-pbtn:active{transform:scale(.9)}
+.dndp-ws-split{transition:background .16s ease}
+.dndp-ritem{transition:background .14s ease,border-color .14s ease}
+.dndp-cell{transition:background .12s ease,outline-color .12s ease}
+.dndp-tok{transition:left .2s cubic-bezier(.22,.61,.36,1),top .2s cubic-bezier(.22,.61,.36,1),width .18s ease,height .18s ease,box-shadow .16s ease}
+.dndp-tok:hover{box-shadow:0 0 0 2px rgba(255,255,255,.4),0 3px 10px rgba(0,0,0,.6)}
+.dndp-tok.drag{transition:none}
+.dndp-msg{animation:dndpIn .2s ease-out}
+.dndp-logrow{animation:dndpIn .16s ease-out;transition:background .14s ease}
+.dndp-bubble{transition:background .16s ease,border-color .16s ease}
+.dndp-pbody{transition:opacity .16s ease}
+.dndp-chev{transition:transform .16s ease}
+.dndp-maptools .dndp-btn.tiny{transition:background .14s ease,transform .08s ease}
 `
 const AB = ['str', 'dex', 'con', 'int', 'wis', 'cha']
 const ABF = { str: '力量', dex: '敏捷', con: '体质', int: '智力', wis: '感知', cha: '魅力' }
@@ -1133,6 +1165,24 @@ function normLayout(l) {
   return out
 }
 const inLayout = (l, id) => WS_SLOTS.some(([k]) => l.slots[k].panels.indexOf(id) >= 0)
+// 把面板移动到目标槽位的目标位置（同槽位即重排）。纯函数，方便单测。
+function reorderPanels(base, pid, toSlot, toIndex) {
+  const n = cloneLayout(base)
+  if (!n.slots[toSlot] || !PANEL_DEFS[pid]) return n
+  const fromSlot = slotOf(n, pid)
+  if (fromSlot) {
+    const fi = n.slots[fromSlot].panels.indexOf(pid)
+    if (fi >= 0) { n.slots[fromSlot].panels.splice(fi, 1); n.weights[fromSlot].splice(fi, 1) }
+    if (fromSlot === toSlot && fi >= 0 && fi < toIndex) toIndex--
+  }
+  const at = Math.max(0, Math.min(n.slots[toSlot].panels.length, toIndex))
+  n.slots[toSlot].panels.splice(at, 0, pid)
+  n.weights[toSlot].splice(at, 0, 1)
+  n.weights[toSlot] = n.slots[toSlot].panels.map(() => 1)
+  if (fromSlot && n.slots[fromSlot].panels.length) n.weights[fromSlot] = n.slots[fromSlot].panels.map(() => 1)
+  n.collapsed = (n.collapsed || []).filter(x => x !== pid)
+  return n
+}
 function slotOf(l, id) { for (const [k] of WS_SLOTS) if (l.slots[k].panels.indexOf(id) >= 0) return k; return null }
 
 function Roster(props) {
@@ -1194,24 +1244,49 @@ function StatsPanel() {
 }
 
 function PanelFrame(props) {
-  const [menu, setMenu] = React.useState(false)
+  const [menu, setMenu] = React.useState(null)   // {x,y} 视口坐标：菜单锚在按钮上，不再跑到窗口最右侧
   const def = PANEL_DEFS[props.id] || { title: props.id, icon: '▫' }
   const isCol = props.collapsed
-  const head = h('div', { className: 'dndp-ptitle' },
+  React.useEffect(() => {
+    if (!menu || typeof window === 'undefined') return undefined
+    const close = () => setMenu(null)
+    const onKey = (e) => { if (e.key === 'Escape') setMenu(null) }
+    window.addEventListener('pointerdown', close)
+    window.addEventListener('keydown', onKey)
+    return () => { window.removeEventListener('pointerdown', close); window.removeEventListener('keydown', onKey) }
+  }, [menu])
+  const openMenu = (e) => {
+    e.stopPropagation()
+    const r = e.currentTarget.getBoundingClientRect()
+    const W = 196, need = 250
+    let x = r.right - W, y = r.bottom + 4
+    if (typeof window !== 'undefined') {
+      x = Math.max(8, Math.min(x, window.innerWidth - W - 8))
+      if (y + need > window.innerHeight) y = Math.max(8, r.top - need - 4)
+    }
+    setMenu({ x: x, y: y })
+  }
+  const onTitleDown = (e) => {
+    const t = e.target
+    if (t && t.tagName === 'BUTTON') return
+    if (e.button !== 0) return
+    if (props.onDragStart) props.onDragStart(e)
+  }
+  const head = h('div', { className: 'dndp-ptitle' + (props.dragging ? ' dragging' : ''), onPointerDown: onTitleDown, title: '按住标题栏拖动可换位置' },
     h('span', null, def.icon), h('span', null, def.title), h('div', { className: 'sp' }),
-    h('button', { className: 'dndp-pbtn', title: props.collapsed ? '展开' : '折叠', onClick: () => props.onCollapse() }, props.collapsed ? '▸' : '▾'),
-    h('button', { className: 'dndp-pbtn', title: props.isMax ? '还原' : '最大化', onClick: () => props.onMax() }, props.isMax ? '❐' : '⤢'),
-    h('button', { className: 'dndp-pbtn', title: '移动 / 关闭', onClick: () => setMenu(!menu) }, '⋯'))
+    h('button', { className: 'dndp-pbtn', title: props.collapsed ? '展开' : '折叠', onPointerDown: e => e.stopPropagation(), onClick: () => props.onCollapse() }, props.collapsed ? '▸' : '▾'),
+    h('button', { className: 'dndp-pbtn', title: props.isMax ? '还原' : '最大化', onPointerDown: e => e.stopPropagation(), onClick: () => props.onMax() }, props.isMax ? '❐' : '⤢'),
+    h('button', { className: 'dndp-pbtn', title: '移动 / 关闭', onPointerDown: e => e.stopPropagation(), onClick: openMenu }, '⋯'))
   const items = [
     h('div', { key: 'h1', className: 'hd' }, '移到槽位'),
-    ...WS_SLOTS.map(([k, n]) => h('button', { key: k, onClick: () => { props.onMove(k); setMenu(false) } }, n + (slotOf(props.layout, props.id) === k ? '（当前）' : ''))),
+    ...WS_SLOTS.map(([k, n]) => h('button', { key: k, onClick: () => { props.onMove(k); setMenu(null) } }, n + (slotOf(props.layout, props.id) === k ? '（当前）' : ''))),
     h('div', { key: 's', className: 'sep' }),
-    h('button', { key: 'add', onClick: () => { props.onAddTo(props.id); setMenu(false) } }, '复制到另一槽位'),
-    h('button', { key: 'rm', onClick: () => { props.onClose(props.id); setMenu(false) } }, '从工作区移除'),
+    h('button', { key: 'add', onClick: () => { props.onAddTo(props.id); setMenu(null) } }, '复制到另一槽位'),
+    h('button', { key: 'rm', onClick: () => { props.onClose(props.id); setMenu(null) } }, '从工作区移除'),
   ]
-  return h('div', { className: 'dndp-panel' + (isCol ? ' col' : '') + (props.isMax ? ' max' : ''), style: props.style },
+  return h('div', { className: 'dndp-panel' + (isCol ? ' col' : '') + (props.isMax ? ' max' : '') + (props.dragging ? ' dragsrc' : ''), style: props.style },
     head,
-    menu ? h('div', { className: 'dndp-pmenu', style: { top: 26, right: 8 } }, items) : null,
+    menu ? h('div', { className: 'dndp-pmenu', style: { position: 'fixed', left: menu.x, top: menu.y, width: 196 }, onPointerDown: e => e.stopPropagation() }, items) : null,
     h('div', { className: 'dndp-pbody' }, isCol ? null : props.children))
 }
 
@@ -1223,9 +1298,16 @@ function Workspace() {
   const [rev, setRev] = React.useState(0)
   const [menu, setMenu] = React.useState(false)
   const [msg, setMsg] = React.useState('')
+  const [pDrag, setPDrag] = React.useState(null)   // 面板拖动：{id, slot, index, x, y, over:{slot,index,bar}}
   const rootRef = React.useRef(null)
   const dragRef = React.useRef(null)
   const saveTimer = React.useRef(null)
+  const slotRefs = React.useRef({})
+  const panelRefs = React.useRef({})
+  const pDragRef = React.useRef(null)
+  const layoutRef = React.useRef(null)
+  React.useEffect(() => { pDragRef.current = pDrag }, [pDrag])
+  React.useEffect(() => { layoutRef.current = layout }, [layout])
 
   React.useEffect(() => {
     call('ws.get', {}).then(r => {
@@ -1287,6 +1369,76 @@ function Workspace() {
     commit(n)
     setMsg('已复制到「' + (WS_SLOTS.find(s => s[0] === next) || [])[1] + '」（同一面板可以同时出现在多个槽位）')
   }
+  // 拖到指定槽位的指定位置（同槽位内即重排）
+  const movePanelTo = (pid, toSlot, toIndex) => {
+    const n = reorderPanels(layoutRef.current || layout, pid, toSlot, toIndex)
+    commit(n)
+    const at = n.slots[toSlot] ? n.slots[toSlot].panels.indexOf(pid) : 0
+    setMsg('已移动到「' + ((WS_SLOTS.find(s => s[0] === toSlot) || [])[1] || toSlot) + '」第 ' + (at + 1) + ' 位')
+  }
+  // 计算拖动落点：命中哪个槽位、插到第几位、指示条画在哪
+  const computeDrop = (x, y) => {
+    const base = layoutRef.current
+    if (!base) return null
+    for (const pair of WS_SLOTS) {
+      const name = pair[0]
+      const el = slotRefs.current[name]
+      if (!el) continue
+      const r = el.getBoundingClientRect()
+      if (x < r.left || x > r.right || y < r.top || y > r.bottom) continue
+      const panels = base.slots[name].panels
+      const horiz = name === 'bottom'
+      for (let i = 0; i < panels.length; i++) {
+        const pe = panelRefs.current[name + ':' + i]
+        if (!pe) continue
+        const pr = pe.getBoundingClientRect()
+        const mid = horiz ? (pr.left + pr.right) / 2 : (pr.top + pr.bottom) / 2
+        if ((horiz ? x : y) < mid) {
+          return { slot: name, index: i, bar: horiz ? { x: pr.left - 2, y: pr.top + 3, w: 4, h: Math.max(8, pr.height - 6) } : { x: pr.left + 6, y: pr.top - 2, w: Math.max(8, pr.width - 12), h: 4 } }
+        }
+      }
+      const lastIdx = panels.length - 1
+      const last = lastIdx >= 0 ? panelRefs.current[name + ':' + lastIdx] : null
+      if (last) {
+        const lr = last.getBoundingClientRect()
+        return { slot: name, index: panels.length, bar: horiz ? { x: lr.right - 2, y: lr.top + 3, w: 4, h: Math.max(8, lr.height - 6) } : { x: lr.left + 6, y: lr.bottom - 2, w: Math.max(8, lr.width - 12), h: 4 } }
+      }
+      return { slot: name, index: 0, bar: horiz ? { x: r.left + 8, y: r.top + 6, w: 4, h: Math.max(8, r.height - 12) } : { x: r.left + 8, y: r.top + 6, w: Math.max(8, r.width - 16), h: 4 } }
+    }
+    return null
+  }
+  const startPanelDrag = (pid, slot, index) => (ev) => {
+    if (ev && ev.preventDefault) ev.preventDefault()
+    setPDrag({ id: pid, slot: slot, index: index, x: ev.clientX, y: ev.clientY, x0: ev.clientX, y0: ev.clientY, moved: false, over: null })
+  }
+  React.useEffect(() => {
+    if (!pDrag || typeof window === 'undefined') return undefined
+    const onMove = (ev) => {
+      ev.preventDefault()
+      setPDrag(d => {
+        if (!d) return d
+        const moved = d.moved || (Math.abs(ev.clientX - d.x0) + Math.abs(ev.clientY - d.y0) > 5)
+        return Object.assign({}, d, { x: ev.clientX, y: ev.clientY, moved: moved, over: moved ? computeDrop(ev.clientX, ev.clientY) : null })
+      })
+    }
+    const onUp = () => {
+      const d = pDragRef.current
+      // 只有真的拖动过才换位，避免「点一下标题栏就把面板挪走」
+      if (d && d.moved && d.over) movePanelTo(d.id, d.over.slot, d.over.index)
+      setPDrag(null)
+    }
+    const onKey = (e) => { if (e.key === 'Escape') setPDrag(null) }
+    window.addEventListener('pointermove', onMove, { passive: false })
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('keydown', onKey)
+    try { document.body.style.userSelect = 'none'; document.body.style.cursor = 'grabbing' } catch (e) { }
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('keydown', onKey)
+      try { document.body.style.userSelect = ''; document.body.style.cursor = '' } catch (e) { }
+    }
+  }, [!!pDrag])
   const toggleCollapse = (pid) => {
     const n = cloneLayout(layout)
     n.collapsed = n.collapsed.indexOf(pid) >= 0 ? n.collapsed.filter(x => x !== pid) : n.collapsed.concat([pid])
@@ -1358,9 +1510,16 @@ function Workspace() {
     })()
     const weight = (layout.weights[slot] || [])[index] || 1
     const style = collapsed ? { flex: 'none' } : { flex: weight + ' 1 0', minHeight: 0, minWidth: 0 }
-    return h('div', { key: slot + '-' + pid + '-' + index, style: { display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, ...style } },
+    return h('div', {
+      key: slot + '-' + pid + '-' + index,
+      ref: el => { panelRefs.current[slot + ':' + index] = el },
+      className: 'dndp-panelslot',
+      style: { display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, ...style },
+    },
       h(PanelFrame, {
         id: pid, layout: layout, collapsed: collapsed, isMax: layout.maximized === pid, style: { flex: 1, minHeight: 0 },
+        dragging: !!(pDrag && pDrag.id === pid && pDrag.slot === slot),
+        onDragStart: startPanelDrag(pid, slot, index),
         onCollapse: () => toggleCollapse(pid), onMax: () => toggleMax(pid), onClose: closePanel, onMove: (s) => movePanel(pid, s), onAddTo: addTo,
       }, body),
       index < total - 1 ? h('div', { className: 'dndp-ws-split ' + (slot === 'bottom' ? 'v' : 'h'), onPointerDown: startDrag('panel', slot, index) }) : null)
@@ -1369,9 +1528,10 @@ function Workspace() {
   const col = (slotName) => {
     const s = layout.slots[slotName]
     const panels = s.panels
-    const dir = slotName === 'bottom' ? 'row' : 'col'
-    return h('div', { className: 'dndp-ws-inner ' + (dir === 'row' ? 'h' : ''), style: { flex: 1, minHeight: 0, minWidth: 0 } },
-      panels.length ? panels.map((pid, i) => renderPanel(pid, slotName, i, panels.length)) : h('div', { className: 'dndp-empty', style: { flex: 1 } }, '（空）点右上「面板」把模块放进来'))
+    const horiz = slotName === 'bottom'
+    const glowing = !!(pDrag && pDrag.over && pDrag.over.slot === slotName)
+    return h('div', { className: 'dndp-ws-inner ' + (horiz ? 'h' : '') + ' dndp-slot' + (glowing ? ' glow' : ''), style: { flex: 1, minHeight: 0, minWidth: 0 } },
+      panels.length ? panels.map((pid, i) => renderPanel(pid, slotName, i, panels.length)) : h('div', { className: 'dndp-empty', style: { flex: 1, padding: '10px 6px' } }, '（空）把面板拖到这里'))
   }
 
   if (layout.maximized && inLayout(layout, layout.maximized)) {
@@ -1382,13 +1542,26 @@ function Workspace() {
       h('div', { className: 'dndp-ws-main' }, h('div', { style: { flex: 1, display: 'flex', minHeight: 0, padding: 6 } }, renderPanel(pid, slotOf(layout, pid) || 'center', 0, 1))))
   }
 
-  const bottomH = layout.slots.bottom.panels.length ? Math.max(80, layout.slots.bottom.size) : 0
+  // 空槽位也留出可拖入的区域（左侧窄条 / 右侧窄条 / 拖动时才出现的底栏）
+  const hasBottom = layout.slots.bottom.panels.length > 0
+  const bottomH = hasBottom ? Math.max(80, layout.slots.bottom.size) : 0
+  const leftEmpty = !layout.slots.left.panels.length
+  const rightEmpty = !layout.slots.right.panels.length
+  const refOf = (name) => (el => { slotRefs.current[name] = el })
   const mainRow = h('div', { className: 'dndp-ws-row', style: { flex: 1, minHeight: 0 } },
-    layout.slots.left.panels.length ? h('div', { className: 'dndp-ws-col', style: { width: layout.slots.left.size, flex: 'none', padding: 4 } }, col('left')) : null,
-    layout.slots.left.panels.length && (layout.slots.center.panels.length || layout.slots.right.panels.length) ? h('div', { className: 'dndp-ws-split v', onPointerDown: startDrag('col', 'left') }) : null,
-    h('div', { className: 'dndp-ws-col', style: { flex: 1, minWidth: 0, padding: 4 } }, col('center')),
-    layout.slots.right.panels.length ? h('div', { className: 'dndp-ws-split v', onPointerDown: startDrag('col', 'right') }) : null,
-    layout.slots.right.panels.length ? h('div', { className: 'dndp-ws-col', style: { width: layout.slots.right.size, flex: 'none', padding: 4 } }, col('right')) : null)
+    h('div', {
+      className: 'dndp-ws-col dndp-slotwrap' + (leftEmpty ? ' slim' : ''),
+      ref: refOf('left'),
+      style: { width: leftEmpty ? 118 : layout.slots.left.size, flex: 'none', padding: 4 },
+    }, col('left')),
+    (!leftEmpty || !rightEmpty || layout.slots.center.panels.length) ? h('div', { className: 'dndp-ws-split v', onPointerDown: startDrag('col', 'left') }) : null,
+    h('div', { className: 'dndp-ws-col', ref: refOf('center'), style: { flex: 1, minWidth: 0, padding: 4 } }, col('center')),
+    h('div', { className: 'dndp-ws-split v', onPointerDown: startDrag('col', 'right') }),
+    h('div', {
+      className: 'dndp-ws-col dndp-slotwrap' + (rightEmpty ? ' slim' : ''),
+      ref: refOf('right'),
+      style: { width: rightEmpty ? 132 : layout.slots.right.size, flex: 'none', padding: 4 },
+    }, col('right')))
 
   const allPanels = Object.keys(PANEL_DEFS)
   const menuItems = [
@@ -1398,7 +1571,11 @@ function Workspace() {
     h('button', { key: 'r', onClick: () => { reset(); setMenu(false) } }, '重置为默认布局'),
   ]
 
-  return h('div', { className: 'dndp-ws', ref: rootRef },
+  const ghost = pDrag ? h('div', { className: 'dndp-dragghost', style: { left: pDrag.x, top: pDrag.y } },
+    ((PANEL_DEFS[pDrag.id] || {}).icon || '▫') + ' ' + ((PANEL_DEFS[pDrag.id] || {}).title || pDrag.id)) : null
+  const dropBar = (pDrag && pDrag.over && pDrag.over.bar) ? h('div', { className: 'dndp-drop', style: { position: 'fixed', left: pDrag.over.bar.x, top: pDrag.over.bar.y, width: pDrag.over.bar.w, height: pDrag.over.bar.h } }) : null
+
+  return h('div', { className: 'dndp-ws' + (pDrag ? ' dragging' : ''), ref: rootRef },
     h('div', { className: 'dndp-ws-top' },
       h('span', { className: 'logo' }, '⚔ SoloTRPG'),
       h('span', { className: 'dndp-chip' }, '工作区'),
@@ -1413,8 +1590,9 @@ function Workspace() {
     h('div', { className: 'dndp-ws-main' },
       h('div', { style: { flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 } },
         mainRow,
-        bottomH ? h('div', { className: 'dndp-ws-split h', onPointerDown: startDrag('bottom', 'bottom') }) : null,
-        bottomH ? h('div', { className: 'dndp-ws-col', style: { height: bottomH, flex: 'none', padding: 4 } }, col('bottom')) : null)))
+        (hasBottom || pDrag) ? h('div', { className: 'dndp-ws-split h', onPointerDown: startDrag('bottom', 'bottom') }) : null,
+        (hasBottom || pDrag) ? h('div', { className: 'dndp-ws-col dndp-slotwrap' + (hasBottom ? '' : ' slim'), ref: refOf('bottom'), style: { height: hasBottom ? bottomH : 54, flex: 'none', padding: 4 } }, col('bottom')) : null)),
+    ghost, dropBar)
 }
 
 function SettingsPanel(props) {

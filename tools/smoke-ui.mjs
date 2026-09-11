@@ -134,7 +134,7 @@ function captureScope(code) {
   const names = ['Card', 'Pips', 'XpWidget', 'Sect', 'ChoiceBox', 'LevelSet', 'ManualEdit', 'StatusPanel', 'EquipPanel',
     'Bag', 'RulesPanel', 'Multiclass', 'Wizard', 'Detail', 'MapPanel', 'LogView', 'LogRow', 'DiceBar', 'PartyView',
     'Workspace', 'Roster', 'SheetHost', 'StatsPanel', 'PanelFrame', 'AIPanel', 'SettingsPanel', 'PANEL_DEFS', 'DEFAULT_LAYOUT', 'normLayout',
-    'slotOf', 'inLayout', 'cellDist', 'cloneLayout', 'TERRAIN', 'WS_SLOTS']
+    'slotOf', 'inLayout', 'cellDist', 'cloneLayout', 'reorderPanels', 'TERRAIN', 'WS_SLOTS']
   return code.replace(marker, 'globalThis.__UI_SCOPE__ = { ' + names.join(', ') + ' }\n' + marker)
 }
 
@@ -272,7 +272,7 @@ async function deepWorkspace() {
   const cells = starts('dndp-cell')
   const toks = has('dndp-tok') + starts('dndp-tok ')
   const rows = starts('dndp-logrow')
-  const panels = starts('dndp-panel')
+  const panels = seenCls.filter((c) => c.indexOf('dndp-panel') === 0 && c.indexOf('dndp-panelslot') !== 0).length
   const titles = has('dndp-ptitle')
   const splitters = starts('dndp-ws-split')
   const roster = has('dndp-ritem')
@@ -319,6 +319,25 @@ function pureChecks() {
   }
   const slotOf = scope.slotOf
   if (typeof slotOf === 'function' && slotOf(nl(scope.DEFAULT_LAYOUT), 'map') !== 'center') problems.push('默认布局里 map 应该在 center')
+  // 拖动落位：跨槽位 / 同槽位重排 / 权重与面板数一致
+  const rp = scope.reorderPanels
+  if (typeof rp === 'function') {
+    const base = nl(scope.DEFAULT_LAYOUT)
+    const a = rp(base, 'map', 'left', 1)
+    if (a.slots.left.panels.join(',') !== 'roster,map') problems.push('跨槽位移动结果不对：left=' + a.slots.left.panels.join(','))
+    if (a.slots.center.panels.join(',') !== 'sheet') problems.push('移出后面板残留：center=' + a.slots.center.panels.join(','))
+    const b = rp(base, 'ai', 'center', 0)
+    if (b.slots.center.panels[0] !== 'ai') problems.push('插到首位结果不对：' + b.slots.center.panels.join(','))
+    const three = nl({ slots: { center: { panels: ['map', 'sheet', 'log'] } } })
+    const c = rp(three, 'map', 'center', 2)
+    if (c.slots.center.panels.join(',') !== 'sheet,map,log') problems.push('同槽位重排结果不对：' + c.slots.center.panels.join(','))
+    const d = rp(three, 'log', 'center', 0)
+    if (d.slots.center.panels.join(',') !== 'log,map,sheet') problems.push('同槽位前插结果不对：' + d.slots.center.panels.join(','))
+    for (const k of ['left', 'center', 'right', 'bottom']) {
+      if (c.slots[k].panels.length !== (c.weights[k] || []).length) problems.push('权重长度与面板数不一致：' + k)
+    }
+    if (!problems.length) notes.push('拖动落位：跨槽位/同槽位重排/权重 4 个断言通过')
+  }
 }
 
 await deepWorkspace()
