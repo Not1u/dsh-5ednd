@@ -758,11 +758,36 @@ return {
       } catch (e) { return { ok: false, error: String(e && e.message || e) } }
     }))
     // ===== 战术地图（5 尺格）=====
-    // 地形图例（每格 1 字符）：
-    //   . 地面   # 岩壁/墙   ~ 溪水(困难)   , 灌木/荆棘(困难·半掩体)   ^ 高地/崖顶(高差)
-    //   o 洞口/黑暗   + 门   = 木板/桥   T 树(半掩体)   ! 篝火/光源   x 碎石/废墟   ' ' 虚空
+    // 瓦片目录（每格 1 字符）。AI 用这些字符拼地图；client 用同名 kind 上色/贴纹理。
+    const TILE_DEFS = [
+      ['.', '石地', 'floor', false, false, 0],
+      ['g', '草地', 'grass', false, false, 0],
+      ['v', '泥土', 'dirt', false, false, 0],
+      ['s', '石砖地', 'pave', false, false, 0],
+      ['w', '木地板', 'wood', false, false, 0],
+      ['f', '家具/桌椅', 'furn', false, true, 2],
+      ['p', '楼梯/斜坡', 'stair', false, false, 0],
+      ['#', '岩壁', 'wall', true, false, 0],
+      ['b', '砖墙', 'brick', true, false, 0],
+      ['c', '岩柱', 'pillar', true, false, 0],
+      ['~', '浅水', 'water', false, true, 0],
+      ['W', '深水', 'deep', false, true, 0],
+      [',', '灌木/荆棘', 'brush', false, true, 2],
+      ['^', '高地/崖顶', 'ledge', false, false, 0],
+      ['o', '洞口/黑暗', 'cave', false, false, 0],
+      ['+', '木门', 'door', false, false, 0],
+      ['=', '木板/桥', 'plank', false, false, 0],
+      ['T', '树', 'tree', false, false, 2],
+      ['!', '火堆/光源', 'fire', false, false, 0],
+      ['x', '碎石/废墟', 'rubble', false, true, 0],
+      [' ', '虚空', 'void', true, false, 0],
+    ]
+    const TILE_KEYS = TILE_DEFS.map(t => t[0])
+    const TILE_BY_CHAR = TILE_DEFS.reduce((o, t) => { o[t[0]] = { t: t[0], name: t[1], kind: t[2], solid: t[3], difficult: t[4], cover: t[5] }; return o }, {})
     const MAP_PATH = ROOT + '/data/map.json'
-    const TERRAIN_KEYS = ['.', '#', '~', ',', '^', 'o', '+', '=', 'T', '!', 'x', ' ']
+    const MAPS_DIR = ROOT + '/data/maps'
+    const MAPS_INDEX = ROOT + '/data/maps.json'
+    const TERRAIN_KEYS = TILE_KEYS
     const cellName = (x, y) => {
       let s = '', n = Math.max(0, Math.floor(x))
       do { s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26) - 1 } while (n >= 0)
@@ -784,19 +809,69 @@ return {
       }
       return out
     }
-    const readMap = async () => {
-      try {
-        const j = JSON.parse(await fsRead(MAP_PATH))
-        if (j && Array.isArray(j.terrain)) {
-          const w = Math.max(4, Math.min(80, Number(j.w) || 24))
-          const h = Math.max(4, Math.min(60, Number(j.h) || 16))
-          return { name: j.name || '', campaign: j.campaign || '', w: w, h: h, cell: Number(j.cell) || 5, terrain: sanitizeTerrain(j.terrain, w, h), tokens: Array.isArray(j.tokens) ? j.tokens : [], updatedAt: j.updatedAt || null }
+    const mapIdSafe = (id) => String(id || '').replace(/[^A-Za-z0-9._-]/g, '').slice(0, 60)
+    const readMapsIndex = async () => {
+      let idx = null
+      try { idx = JSON.parse(await fsRead(MAPS_INDEX)) } catch (e) { }
+      if (!idx || !Array.isArray(idx.list)) {
+        // 首次：把旧的 data/map.json 收编成一张图
+        let legacy = null
+        try { legacy = JSON.parse(await fsRead(MAP_PATH)) } catch (e) { }
+        idx = { current: 'main', list: [] }
+        if (legacy && Array.isArray(legacy.terrain)) {
+          idx.list.push({ id: 'main', name: legacy.name || '主地图', w: Number(legacy.w) || 24, h: Number(legacy.h) || 16, updatedAt: legacy.updatedAt || null })
+          const wr = await writeRaw(MAPS_DIR + '/main.json', JSON.stringify(legacy, null, 2))
+          void wr
         }
+      }
+      return idx
+    }
+    const writeMapsIndex = async (idx) => writeRaw(MAPS_INDEX, JSON.stringify(idx, null, 2))
+    const readMapById = async (id) => {
+      const safe = mapIdSafe(id)
+      try {
+        const j = JSON.parse(await fsRead(MAPS_DIR + '/' + safe + '.json'))
+        if (j && Array.isArray(j.terrain)) return j
       } catch (e) { }
-      return { name: '', campaign: '', w: 24, h: 16, cell: 5, terrain: sanitizeTerrain([], 24, 16), tokens: [], updatedAt: null }
+      return null
+    }
+    const normalizeMapFile = (j) => {
+      const w = Math.max(4, Math.min(80, Number(j.w) || 24))
+      const h = Math.max(4, Math.min(60, Number(j.h) || 16))
+      return { id: mapIdSafe(j.id || '') || undefined, name: j.name || '', campaign: j.campaign || '', w: w, h: h, cell: Number(j.cell) || 5, terrain: sanitizeTerrain(j.terrain, w, h), tokens: Array.isArray(j.tokens) ? j.tokens : [], updatedAt: j.updatedAt || null }
+    }
+    const readMap = async () => {
+      const idx = await readMapsIndex()
+      let cur = await readMapById(idx.current)
+      if (!cur) {
+        try { cur = JSON.parse(await fsRead(MAP_PATH)) } catch (e) { cur = null }
+      }
+      if (cur) return Object.assign(normalizeMapFile(cur), { id: mapIdSafe(idx.current) || 'main' })
+      return { id: 'main', name: '', campaign: '', w: 24, h: 16, cell: 5, terrain: sanitizeTerrain([], 24, 16), tokens: [], updatedAt: null }
+    }
+    const writeRaw = async (absPath, txt) => {
+      if (typeof DND5E_WRITE === 'function') { try { const r = await DND5E_WRITE(absPath, txt); if (r && r.ok) return { ok: true } } catch (e) { } }
+      try {
+        const fs2 = ctx.get('fs')
+        const t = await fs2.resolve(absPath)
+        if (fs2 && typeof fs2.writeText === 'function') { await fs2.writeText(t, txt); return { ok: true } }
+      } catch (e) { }
+      return { ok: false, error: '写入失败：' + absPath }
     }
     const writeMap = async (map) => {
       map.updatedAt = nowIso()
+      const idx = await readMapsIndex()
+      const id = mapIdSafe(map.id || idx.current) || 'main'
+      map.id = id
+      idx.current = id
+      const entry = { id: id, name: map.name || '未命名', w: map.w, h: map.h, tokens: (map.tokens || []).length, updatedAt: map.updatedAt }
+      const li = idx.list.findIndex(x => x.id === id)
+      if (li >= 0) idx.list[li] = Object.assign({}, idx.list[li], entry); else idx.list.push(entry)
+      const body = JSON.stringify(map, null, 2)
+      const r1 = await writeRaw(MAPS_DIR + '/' + id + '.json', body)
+      await writeRaw(MAP_PATH, body)   // 兼容镜像：旧工具/脚本仍读 data/map.json
+      await writeMapsIndex(idx)
+      return r1
       const txt = JSON.stringify(map, null, 2)
       if (typeof DND5E_WRITE === 'function') {
         try { const r = await DND5E_WRITE(MAP_PATH, txt); if (r && r.ok) return { ok: true } } catch (e) { }
@@ -1169,6 +1244,14 @@ return {
         T('log.set', '战斗记录', '设置战役名与轮次', { campaign: '', round: 2 }),
         T('log.clear', '战斗记录', '清空战斗记录', {}),
         T('map.get', '地图', '取当前战术地图（5 尺格、地形 ASCII、单位）', {}),
+        T('map.tiles', '地图', '列出全部瓦片字符（名称/是否阻挡/困难地形/掩体）——拼地图前先看这个', {}),
+        T('map.list', '地图', '列出所有地图与当前地图', {}),
+        T('map.use', '地图', '切换到另一张地图', { id: 'main' }),
+        T('map.create', '地图', '新建一张地图并切过去', { id: '', name: '克拉格巢穴', w: 24, h: 16, terrain: ['...'], tokens: [] }),
+        T('map.save', '地图', '把当前地图另存为新的 id', { id: 'cave-2', name: '洞内' }),
+        T('map.rename', '地图', '给当前地图改名', { name: '潮汐洞' }),
+        T('map.delete', '地图', '删除一张地图', { id: 'old' }),
+        T('map.batch', '地图', '一次做完一串地图变更（移动/改数值/增删单位/改地形，可顺带写战斗记录）——AI 跑敌人回合用这个', { ops: [{ move: { id: '地精A', x: 4, y: 5 } }, { update: { id: '地精A', patch: { hp: 3 } } }], log: '地精A 冲向布洛林', actor: 'DM' }),
         T('map.set', '地图', '整张地图替换/新建（AI 布景入口）', { w: 24, h: 14, name: '', terrain: ['....', '####'], tokens: [{ name: '地精', kind: 'enemy', x: 3, y: 2, hp: 7, max: 7, speed: 30 }] }),
         T('map.terrain.set', '地图', '改地形：整行、整片或按格 [{x,y,t}]', { cells: [{ x: 3, y: 4, t: '#' }] }),
         T('map.token.add', '地图', '放一个单位', { token: { name: '狼', kind: 'enemy', x: 5, y: 5, hp: 11, max: 11, speed: 40 } }),
@@ -1292,7 +1375,7 @@ return {
         properties: {
           name: { type: 'string' },
           w: { type: 'number' }, h: { type: 'number' },
-          terrain: { type: 'array', items: { type: 'string' }, description: 'h 行、每行 w 个字符。. 地面 # 岩壁 ~ 溪水(困难) , 荆棘(困难+半掩体) ^ 高地 o 洞口 + 门 = 木板 T 树 ! 火堆 x 碎石 (空格) 虚空' },
+          terrain: { type: 'array', items: { type: 'string' }, description: 'h 行、每行 w 个字符（1 字符 = 1 格 = 5 尺）。用 map.tiles 查全部字符：. 石地 g 草地 v 泥土 s 石砖地 w 木地板 f 家具 p 楼梯 # 岩壁 b 砖墙 c 岩柱 ~ 浅水 W 深水 , 灌木 ^ 高地 o 洞口 + 木门 = 木板 T 树 ! 火堆 x 碎石 (空格) 虚空' },
           tokens: { type: 'array', items: { type: 'object', additionalProperties: true, properties: { id: { type: 'string' }, name: { type: 'string' }, kind: { type: 'string', enum: ['pc', 'enemy', 'ally', 'object'] }, x: { type: 'number' }, y: { type: 'number' }, hp: { type: 'number' }, max: { type: 'number' }, speed: { type: 'number' }, note: { type: 'string' } } } },
         },
       },
@@ -1301,6 +1384,29 @@ return {
       'map.token.move': { type: 'object', additionalProperties: false, properties: { id: { type: 'string', description: '单位 id 或名字' }, x: { type: 'number' }, y: { type: 'number' }, log: { type: 'boolean' } }, required: ['id', 'x', 'y'] },
       'map.token.update': { type: 'object', additionalProperties: true, properties: { id: { type: 'string' }, patch: { type: 'object', additionalProperties: true, properties: { hp: { type: 'number' }, note: { type: 'string' }, name: { type: 'string' }, kind: { type: 'string' }, color: { type: 'string' }, speed: { type: 'number' } } } }, required: ['id'] },
       'map.token.remove': { type: 'object', additionalProperties: false, properties: { id: { type: 'string' } }, required: ['id'] },
+      'map.tiles': { type: 'object', properties: {}, additionalProperties: false },
+      'map.list': { type: 'object', properties: {}, additionalProperties: false },
+      'map.use': { type: 'object', additionalProperties: false, properties: { id: { type: 'string' } }, required: ['id'] },
+      'map.create': { type: 'object', additionalProperties: true, properties: { id: { type: 'string' }, name: { type: 'string' }, w: { type: 'number' }, h: { type: 'number' }, terrain: { type: 'array', items: { type: 'string' } }, tokens: { type: 'array', items: { type: 'object', additionalProperties: true } } } },
+      'map.save': { type: 'object', additionalProperties: true, properties: { id: { type: 'string' }, name: { type: 'string' } } },
+      'map.rename': { type: 'object', additionalProperties: false, properties: { name: { type: 'string' } }, required: ['name'] },
+      'map.delete': { type: 'object', additionalProperties: false, properties: { id: { type: 'string' } }, required: ['id'] },
+      'map.batch': {
+        type: 'object', additionalProperties: true,
+        properties: {
+          actor: { type: 'string' }, log: { type: 'string' }, logKind: { type: 'string' },
+          ops: {
+            type: 'array', description: '按顺序执行的动作',
+            items: { type: 'object', additionalProperties: true, properties: {
+              move: { type: 'object', properties: { id: { type: 'string' }, x: { type: 'number' }, y: { type: 'number' }, log: { type: 'boolean' } } },
+              update: { type: 'object', properties: { id: { type: 'string' }, patch: { type: 'object', additionalProperties: true, properties: { hp: { type: 'number' }, max: { type: 'number' }, note: { type: 'string' }, name: { type: 'string' }, kind: { type: 'string' } } } } },
+              add: { type: 'object', properties: { token: { type: 'object', additionalProperties: true, properties: { name: { type: 'string' }, kind: { type: 'string' }, x: { type: 'number' }, y: { type: 'number' }, hp: { type: 'number' }, max: { type: 'number' }, speed: { type: 'number' }, note: { type: 'string' } } } } },
+              remove: { type: 'object', properties: { id: { type: 'string' } } },
+              terrain: { type: 'object', properties: { cells: { type: 'array', items: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' }, t: { type: 'string' } }, required: ['x', 'y', 't'] } } } },
+            } },
+          },
+        }, required: ['ops'],
+      },
       'map.measure': { type: 'object', additionalProperties: false, properties: { from: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'] }, to: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'] } }, required: ['from', 'to'] },
       'rules.search': { type: 'object', additionalProperties: false, properties: { query: { type: 'string', description: '空格分隔的关键词，AND 关系' }, book: { type: 'string' }, limit: { type: 'number' } }, required: ['query'] },
       'rules.read': { type: 'object', additionalProperties: false, properties: { id: { type: 'string', description: '来自 rules.search 的 id' } }, required: ['id'] },
@@ -1371,6 +1477,8 @@ return {
       '1) 涉及规则条文、怪物数值、模组内容、角色状态、地图位置时，先调用工具拿事实，不要凭记忆编造。',
       '2) 一切掷骰都用 roll.dice（优势 adv / 劣势 dis），不要自己编数字；关键结果用 log.append 写进战斗记录。',
       '3) 伤害/治疗/状态变化用 pc.apply（hp 用增量，log 写一句说明）；地图上的移动用 map.token.move。',
+      '3b) 敌人/NPC 的一整个回合用 map.batch 一次做完（多个 move/update/add/remove + log），可带 actor 与 log 文本。',
+      '3c) 换场景：map.list 看已有地图，map.use 切换；新场地用 map.create（或 map.set 直接铺地形与单位）。地形字符先查 map.tiles。',
       '4) 需要摆场景时用 map.set / map.token.add 把地形与单位放到地图上，玩家就能在侧栏直接看到并拖动。',
       '5) 叙事用中文，简洁有画面感。推进到需要玩家做决定的地方就停下，把选择交给玩家，不要替玩家决定行动。',
       '6) 玩家操纵的角色由玩家说了算；NPC 与怪物由你代为行动与判定。',
@@ -1510,7 +1618,142 @@ return {
         })
       } catch (e) { return { ok: false, error: String(e && e.message || e) } }
     }))
-    // ===== 主题（界面配色）：存 data/theme.json =====
+    // ===== 地图管理：多图切换 + 批量变更（供 AI 一次跑完敌人回合）=====
+    unreg.push(harness.handle('map.tiles', async () => {
+      return jclean({
+        ok: true, count: TILE_DEFS.length,
+        tiles: TILE_DEFS.map(t => ({ t: t[0], name: t[1], kind: t[2], solid: t[3], difficult: t[4], cover: t[5] })),
+        hint: 'terrain 是 h 行字符串、每行 w 个字符，1 字符 = 1 格 = 5 尺。示例 24×16 的一行：\'##########o~~~~~~~~~~~~\'',
+      })
+    }))
+    unreg.push(harness.handle('map.list', async () => {
+      try {
+        const idx = await readMapsIndex()
+        return jclean({ ok: true, current: idx.current, count: (idx.list || []).length, items: (idx.list || []).slice().sort((a, b) => String(a.id).localeCompare(String(b.id))) })
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('map.use', async (args) => {
+      try {
+        const a = args || {}
+        const idx = await readMapsIndex()
+        const id = mapIdSafe(a.id)
+        const found = (idx.list || []).find(x => x.id === id)
+        if (!found) return { ok: false, error: '没有这张地图：' + a.id + '（先用 map.list 看有哪些，或 map.create 新建）' }
+        idx.current = id
+        await writeMapsIndex(idx)
+        const map = await readMap()
+        return Object.assign(mapView(map), { summary: '已切换到「' + (map.name || id) + '」' + map.w + '×' + map.h + '，单位 ' + (map.tokens || []).length + ' 个' })
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('map.create', async (args) => {
+      try {
+        const a = args || {}
+        const idx = await readMapsIndex()
+        let id = mapIdSafe(a.id) || ('map-' + Date.now().toString(36))
+        if ((idx.list || []).some(x => x.id === id)) return { ok: false, error: "已存在同名地图：" + id }
+        const w = Math.max(4, Math.min(80, Number(a.w) || 24))
+        const h = Math.max(4, Math.min(60, Number(a.h) || 16))
+        const map = {
+          id: id, name: a.name || '新地图', campaign: a.campaign || '', w: w, h: h, cell: 5,
+          terrain: sanitizeTerrain(a.terrain || [], w, h), tokens: Array.isArray(a.tokens) ? a.tokens : [], updatedAt: null,
+        }
+        const wr = await writeMap(map)
+        return Object.assign(mapView(map), { saved: !!wr.ok, saveError: wr.error || '', summary: '已新建并切换：' + (map.name || id) + '（' + w + '×' + h + '）' })
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('map.save', async (args) => {
+      try {
+        const a = args || {}
+        const cur = await readMap()
+        const id = mapIdSafe(a.id || a.as)
+        if (!id) return { ok: false, error: '需要 id/as：另存为新地图的 id' }
+        const copy = Object.assign({}, cur, { id: id, name: a.name || cur.name || id })
+        const wr = await writeMap(copy)
+        return Object.assign(mapView(copy), { saved: !!wr.ok, saveError: wr.error || '', summary: '当前地图已另存为「' + copy.name + '」（id ' + id + '）' })
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('map.rename', async (args) => {
+      try {
+        const a = args || {}
+        const map = await readMap(); map.name = String(a.name || '').slice(0, 80) || map.name
+        const wr = await writeMap(map)
+        return Object.assign(mapView(map), { saved: !!wr.ok, summary: '地图已重命名为「' + map.name + '」' })
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('map.delete', async (args) => {
+      try {
+        const a = args || {}
+        const idx = await readMapsIndex()
+        const id = mapIdSafe(a.id)
+        const before = (idx.list || []).length
+        idx.list = (idx.list || []).filter(x => x.id !== id)
+        if (idx.list.length === before) return { ok: false, error: "没有这张地图：" + id }
+        if (idx.current === id) idx.current = (idx.list[0] || {}).id || "main"
+        const wr = await writeMapsIndex(idx)
+        try { await writeRaw(MAPS_DIR + "/" + id + ".json", JSON.stringify({ id: id, name: "(已删除)", w: 4, h: 4, terrain: sanitizeTerrain([], 4, 4), tokens: [] }, null, 2)) } catch (e) { }
+        return { ok: true, removed: id, current: idx.current, count: idx.list.length, saved: !!wr.ok, summary: '已删除地图 ' + id + '，当前切到 ' + idx.current }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    // 一次调用做完一串地图变更：移动/改数值/增删单位/改地形，并可写一条战斗记录
+    unreg.push(harness.handle('map.batch', async (args) => {
+      try {
+        const a = args || {}
+        const ops = Array.isArray(a.ops) ? a.ops : (Array.isArray(a) ? a : [])
+        if (!ops.length) return { ok: false, error: '需要 ops 数组：{move|update|add|remove|terrain}' }
+        const map = await readMap()
+        const done = []
+        const findTok = (key) => (map.tokens || []).find(t => t.id === String(key)) || (map.tokens || []).find(t => t.name === String(key))
+        for (const op of ops) {
+          if (op.move) {
+            const tk = findTok(op.move.id)
+            if (!tk) { done.push('✘ 找不到单位 ' + op.move.id); continue }
+            const from = { x: tk.x, y: tk.y }
+            tk.x = Math.max(0, Math.min(map.w - 1, Number(op.move.x))); tk.y = Math.max(0, Math.min(map.h - 1, Number(op.move.y)))
+            const d = cellDist(from, tk)
+            done.push(tk.name + ' ' + cellName(from.x, from.y) + '→' + cellName(tk.x, tk.y) + '(' + d.feetStandard + '尺)')
+            if (op.move.log !== false) {
+              await pushLog([{ kind: 'move', actor: tk.name, text: cellName(from.x, from.y) + ' → ' + cellName(tk.x, tk.y) + (tk.kind === 'pc' ? '' : '（敌方）'), detail: '移动 ' + d.feetStandard + ' 尺（' + d.cells + ' 格）' + (tk.speed && d.feetStandard > tk.speed ? '｜超出速度 ' + tk.speed + ' 尺' : '') }], {})
+            }
+          } else if (op.update) {
+            const tk = findTok(op.update.id)
+            if (!tk) { done.push('✘ 找不到单位 ' + op.update.id); continue }
+            const patch = op.update.patch || op.update
+            for (const k of ["name", "kind", "color", "note"]) if (patch[k] != null) tk[k] = String(patch[k])
+            for (const k of ["hp", "max", "speed", "x", "y", "size"]) if (patch[k] != null && patch[k] !== "") tk[k] = Number(patch[k])
+            if (patch.hidden != null) tk.hidden = !!patch.hidden
+            done.push(tk.name + ' 更新' + (patch.hp != null ? ('(HP ' + tk.hp + '/' + (tk.max || '?') + ')') : ''))
+          } else if (op.add) {
+            const tk = op.add.token || op.add
+            const token = {
+              id: String(tk.id || ('t' + Math.random().toString(36).slice(2, 8))), name: String(tk.name || '?'), kind: tk.kind || 'enemy',
+              x: Math.max(0, Math.min(map.w - 1, Number(tk.x) || 0)), y: Math.max(0, Math.min(map.h - 1, Number(tk.y) || 0)),
+              color: tk.color || null, hp: (tk.hp == null ? null : Number(tk.hp)), max: (tk.max == null ? null : Number(tk.max)),
+              speed: (tk.speed == null ? 30 : Number(tk.speed)), size: Math.max(1, Math.min(4, Number(tk.size) || 1)), note: tk.note || '', hidden: !!tk.hidden,
+            }
+            map.tokens = (map.tokens || []).filter(t => t.id !== token.id).concat([token])
+            done.push('+' + token.name + '@' + cellName(token.x, token.y))
+          } else if (op.remove) {
+            const key = op.remove.id || op.remove
+            const before = (map.tokens || []).length
+            map.tokens = (map.tokens || []).filter(t => t.id !== String(key) && t.name !== String(key))
+            done.push(before > map.tokens.length ? ('-' + key) : ('✘ 找不到单位 ' + key))
+          } else if (op.terrain) {
+            const cells = op.terrain.cells || []
+            const rows = map.terrain.map(r => r.split(""))
+            for (const c of cells) {
+              const x = Number(c.x), y = Number(c.y)
+              if (y >= 0 && y < map.h && x >= 0 && x < map.w) rows[y][x] = TILE_KEYS.includes(c.t) ? c.t : "."
+            }
+            map.terrain = rows.map(r => r.join(""))
+            done.push('地形 ' + cells.length + ' 格')
+          }
+        }
+        const wr = await writeMap(map)
+        if (a.log) await pushLog([{ kind: a.logKind || 'narrate', actor: a.actor || 'DM', text: a.log, detail: done.join('；') }], {})
+        return jclean(Object.assign(mapView(map), { ok: true, applied: done.length, changes: done, saved: !!wr.ok, saveError: wr.error || "", summary: done.join("；").slice(0, 300) }))
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    // ===== 主题（界面配色）：存 data/theme.json =====    // ===== 主题（界面配色）：存 data/theme.json =====
     const THEME_PATH = ROOT + '/data/theme.json'
     const THEME_PRESETS = {
       azure: { name: 'azure', label: '幽蓝', accent: '#5aa0ff' },

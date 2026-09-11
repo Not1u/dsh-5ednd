@@ -134,7 +134,7 @@ function captureScope(code) {
   if (!code.includes(marker)) return code
   const names = ['Card', 'Pips', 'XpWidget', 'Sect', 'ChoiceBox', 'LevelSet', 'ManualEdit', 'StatusPanel', 'EquipPanel',
     'Bag', 'RulesPanel', 'Multiclass', 'Wizard', 'Detail', 'MapPanel', 'LogView', 'LogRow', 'DiceBar', 'PartyView',
-    'Workspace', 'Roster', 'SheetHost', 'StatsPanel', 'PanelFrame', 'AIPanel', 'SettingsPanel', 'onAccentOf', 'normThemeLocal', 'themeClassOf', 'themeStyleOf', 'THEME_LIST', 'PANEL_DEFS', 'DEFAULT_LAYOUT', 'normLayout',
+    'Workspace', 'Roster', 'SheetHost', 'StatsPanel', 'PanelFrame', 'AIPanel', 'SettingsPanel', 'onAccentOf', 'normThemeLocal', 'themeClassOf', 'themeStyleOf', 'THEME_LIST', 'cellVariation', 'PANEL_DEFS', 'DEFAULT_LAYOUT', 'normLayout',
     'slotOf', 'inLayout', 'cellDist', 'cloneLayout', 'reorderPanels', 'TERRAIN', 'WS_SLOTS']
   return code.replace(marker, 'globalThis.__UI_SCOPE__ = { ' + names.join(', ') + ' }\n' + marker)
 }
@@ -336,6 +336,24 @@ function pureChecks() {
   }
   if (themeOk && typeof oa === 'function' && typeof tcl === 'function') notes.push('主题断言：明暗文字自动切换 / 非法值回退默认 / class 组合正确')
   // 拖动落位：跨槽位 / 同槽位重排 / 权重与面板数一致
+  // 瓦片：21 种都有 kind，且图例色块用同一套 kind
+  const TM = scope.TERRAIN
+  if (TM && typeof TM === 'object') {
+    const kinds = Object.keys(TM).map(k => TM[k].k)
+    const uniq = new Set(kinds)
+    if (kinds.length !== 21) problems.push('瓦片种类应为 21，实际 ' + kinds.length)
+    if (uniq.size !== kinds.length) problems.push('瓦片 kind 有重复：' + kinds.join(','))
+    for (const need of ['floor', 'grass', 'wall', 'brick', 'water', 'deep', 'tree', 'fire', 'stair', 'pillar', 'furn']) {
+      if (!uniq.has(need)) problems.push('缺少瓦片 kind: ' + need)
+    }
+    notes.push('瓦片：' + kinds.length + ' 种（kind 唯一），含草地/砖墙/深水/楼梯/岩柱/家具等')
+  } else problems.push('TERRAIN 表不存在')
+  const cv = scope.cellVariation
+  if (typeof cv === 'function') {
+    const a1 = cv(3, 5), b1 = cv(3, 5), c1 = cv(4, 5)
+    if (JSON.stringify(a1) !== JSON.stringify(b1)) problems.push('同格微差应当稳定（可复现）')
+    if (JSON.stringify(a1) === JSON.stringify(c1)) problems.push('相邻格微差应当不同')
+  }
   const rp = scope.reorderPanels
   if (typeof rp === 'function') {
     const base = nl(scope.DEFAULT_LAYOUT)

@@ -160,18 +160,58 @@ const css = `
 .dndp-mapwrap{position:relative;overflow:auto;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-1)}
 .dndp-mapgrid{display:grid;position:relative;width:max-content}
 .dndp-cell{width:var(--dndp-tile);height:var(--dndp-tile);box-sizing:border-box;border-right:1px solid rgba(128,128,128,.18);border-bottom:1px solid rgba(128,128,128,.18);position:relative;display:flex;align-items:center;justify-content:center;font-size:10px;color:rgba(160,160,160,.55);cursor:crosshair}
-.dndp-cell.g-ground{background:var(--dndp-t-ground)}
-.dndp-cell.g-wall{background:var(--dndp-t-wall)}
-.dndp-cell.g-water{background:var(--dndp-t-water)}
-.dndp-cell.g-brush{background:var(--dndp-t-brush)}
-.dndp-cell.g-high{background:var(--dndp-t-high)}
-.dndp-cell.g-cave{background:var(--dndp-t-cave)}
-.dndp-cell.g-door{background:var(--dndp-t-door)}
-.dndp-cell.g-plank{background:var(--dndp-t-plank)}
-.dndp-cell.g-tree{background:var(--dndp-t-tree)}
-.dndp-cell.g-fire{background:var(--dndp-t-fire)}
-.dndp-cell.g-rubble{background:var(--dndp-t-rubble)}
-.dndp-cell.g-void{background:var(--dndp-t-void)}
+.dndp-cell.g-floor,
+.dndp-legend .sw.g-floor{background:radial-gradient(circle at 32% 30%, rgba(255,255,255,.05), transparent 58%),repeating-linear-gradient(118deg, rgba(0,0,0,.11) 0 1px, transparent 1px 8px),linear-gradient(158deg,#45494f,#3a3e45)}
+.dndp-cell.g-grass,
+.dndp-legend .sw.g-grass{background:repeating-linear-gradient(72deg, rgba(120,200,120,.16) 0 1px, transparent 1px 5px),repeating-linear-gradient(-64deg, rgba(60,140,70,.18) 0 1px, transparent 1px 6px),radial-gradient(circle at 40% 70%, rgba(90,170,90,.22), transparent 60%),linear-gradient(160deg,#3c5a37,#2f4a2d)}
+.dndp-cell.g-dirt,
+.dndp-legend .sw.g-dirt{background:radial-gradient(circle at 60% 40%, rgba(190,160,110,.16), transparent 55%),repeating-radial-gradient(circle at 20% 80%, rgba(0,0,0,.10) 0 2px, transparent 2px 7px),linear-gradient(150deg,#5b4b36,#4a3d2c)}
+.dndp-cell.g-pave,
+.dndp-legend .sw.g-pave{background:repeating-linear-gradient(0deg, rgba(0,0,0,.30) 0 1px, transparent 1px 24px),repeating-linear-gradient(90deg, rgba(0,0,0,.30) 0 1px, transparent 1px 24px),radial-gradient(circle at 30% 30%, rgba(255,255,255,.05), transparent 60%),linear-gradient(160deg,#565c63,#454b52)}
+.dndp-cell.g-wood,
+.dndp-legend .sw.g-wood{background:repeating-linear-gradient(90deg, rgba(0,0,0,.28) 0 1px, transparent 1px 18px),repeating-linear-gradient(0deg, rgba(90,60,30,.22) 0 2px, transparent 2px 9px),linear-gradient(155deg,#6b5233,#57422a)}
+.dndp-cell.g-furn,
+.dndp-legend .sw.g-furn{background:linear-gradient(180deg, transparent 22%, rgba(120,84,48,.95) 22%, rgba(90,62,34,.95) 78%, transparent 78%),linear-gradient(90deg, transparent 18%, rgba(120,84,48,.9) 18%, rgba(90,62,34,.9) 82%, transparent 82%),linear-gradient(160deg,#4a3a28,#3c2f20)}
+.dndp-cell.g-stair,
+.dndp-legend .sw.g-stair{background:repeating-linear-gradient(0deg, rgba(255,255,255,.18) 0 2px, transparent 2px 10px),linear-gradient(180deg,#5a5f66,#3f444a)}
+.dndp-cell.g-wall,
+.dndp-legend .sw.g-wall{background:repeating-linear-gradient(135deg, rgba(255,255,255,.05) 0 3px, transparent 3px 12px),radial-gradient(circle at 25% 15%, rgba(255,255,255,.09), transparent 55%),linear-gradient(160deg,#33383f,#1d2126)}
+.dndp-cell.g-brick,
+.dndp-legend .sw.g-brick{background:repeating-linear-gradient(0deg, rgba(0,0,0,.45) 0 1px, transparent 1px 11px),repeating-linear-gradient(90deg, rgba(0,0,0,.40) 0 1px, transparent 1px 22px),linear-gradient(160deg,#6d4038,#4f2c27)}
+.dndp-cell.g-pillar,
+.dndp-legend .sw.g-pillar{background:radial-gradient(circle at 50% 45%, rgba(255,255,255,.16), transparent 52%),radial-gradient(circle at 50% 50%, #7d838c 0 42%, transparent 46%),linear-gradient(160deg,#2b3037,#1f242a)}
+.dndp-cell.g-water,
+.dndp-legend .sw.g-water{background:repeating-linear-gradient(115deg, rgba(255,255,255,.10) 0 2px, transparent 2px 12px),radial-gradient(circle at 30% 65%, rgba(120,200,255,.20), transparent 60%),linear-gradient(160deg,#2c5a80,#20455f)}
+.dndp-cell.g-deep,
+.dndp-legend .sw.g-deep{background:repeating-linear-gradient(115deg, rgba(255,255,255,.06) 0 2px, transparent 2px 16px),radial-gradient(circle at 65% 35%, rgba(90,170,240,.18), transparent 62%),linear-gradient(160deg,#16324d,#0e2237)}
+.dndp-cell.g-brush,
+.dndp-legend .sw.g-brush{background:repeating-radial-gradient(circle at 30% 40%, rgba(120,200,120,.22) 0 3px, transparent 3px 9px),repeating-radial-gradient(circle at 70% 65%, rgba(70,150,80,.26) 0 3px, transparent 3px 11px),linear-gradient(160deg,#2f4a2c,#243a23)}
+.dndp-cell.g-ledge,
+.dndp-legend .sw.g-ledge{background:repeating-linear-gradient(45deg, rgba(255,255,255,.06) 0 2px, transparent 2px 9px),linear-gradient(180deg,rgba(255,255,255,.10),transparent 40%),linear-gradient(160deg,#6a5a3e,#4c4029)}
+.dndp-cell.g-cave,
+.dndp-legend .sw.g-cave{background:radial-gradient(circle at 50% 50%, rgba(0,0,0,.95) 0 55%, rgba(0,0,0,.72) 75%, transparent 100%),linear-gradient(160deg,#14161b,#080a0d)}
+.dndp-cell.g-door,
+.dndp-legend .sw.g-door{background:repeating-linear-gradient(90deg, rgba(0,0,0,.25) 0 1px, transparent 1px 14px),linear-gradient(180deg,#7b5c33,#5a4224)}
+.dndp-cell.g-plank,
+.dndp-legend .sw.g-plank{background:repeating-linear-gradient(90deg, rgba(0,0,0,.32) 0 1px, transparent 1px 13px),linear-gradient(160deg,#57422a,#443322)}
+.dndp-cell.g-tree,
+.dndp-legend .sw.g-tree{background:radial-gradient(circle at 50% 42%, rgba(120,200,120,.92) 0 30%, rgba(60,120,70,.92) 42%, transparent 60%),radial-gradient(circle at 50% 50%, #2c4527 0 46%, transparent 52%),linear-gradient(160deg,#33502f,#26401f)}
+.dndp-cell.g-fire,
+.dndp-legend .sw.g-fire{background:radial-gradient(circle at 50% 55%, rgba(255,220,120,.95) 0 18%, rgba(255,140,40,.75) 34%, transparent 60%),radial-gradient(circle at 50% 70%, rgba(120,60,20,.9) 0 42%, transparent 58%),linear-gradient(160deg,#5a3a1c,#3a2412)}
+.dndp-cell.g-rubble,
+.dndp-legend .sw.g-rubble{background:repeating-radial-gradient(circle at 35% 30%, rgba(255,255,255,.10) 0 2px, transparent 2px 7px),repeating-radial-gradient(circle at 70% 70%, rgba(0,0,0,.22) 0 3px, transparent 3px 9px),linear-gradient(160deg,#4d4840,#38342e)}
+.dndp-cell.g-void,
+.dndp-legend .sw.g-void{background:linear-gradient(160deg,#07080a,#040506)}
+/* 墙体/砖墙给一点体积感，水面缓慢起伏，火堆轻微闪动，树冠有投影 */
+.dndp-cell.g-wall,.dndp-cell.g-brick,.dndp-cell.g-pillar{box-shadow:inset 0 -3px 0 rgba(0,0,0,.45),inset 0 2px 0 rgba(255,255,255,.07)}
+.dndp-cell.g-water,.dndp-cell.g-deep{animation:dndpRipple 6s ease-in-out infinite}
+@keyframes dndpRipple{0%,100%{background-position:0 0,0 0,0 0}50%{background-position:6px 0,0 0,0 0}}
+.dndp-cell.g-fire{animation:dndpFlicker 2.4s ease-in-out infinite}
+@keyframes dndpFlicker{0%,100%{filter:brightness(1)}50%{filter:brightness(1.18)}}
+.dndp-cell.g-tree,.dndp-cell.g-pillar,.dndp-cell.g-furn{box-shadow:inset 0 -4px 6px -3px rgba(0,0,0,.55)}
+.dndp-cell{box-shadow:inset 0 0 0 1px rgba(255,255,255,.02)}
+/* 浅色模式下把瓦片整体翻成浅色（不影响单位图标） */
+.dndp-light .dndp-cell{filter:invert(.88) hue-rotate(185deg) saturate(.9) brightness(1.06)}
 .dndp-cell.msel{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px;z-index:3}
 .dndp-tok{position:absolute;box-sizing:border-box;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;border:2px solid rgba(255,255,255,.85);box-shadow:0 2px 6px rgba(0,0,0,.5);cursor:grab;user-select:none;z-index:5;line-height:1}
 .dndp-tok.drag{cursor:grabbing;z-index:9;opacity:.9}
@@ -997,18 +1037,37 @@ function LogView(props) {
   return h('div', { className: 'dndp-root' }, h('div', { className: 'dndp-header' }, head), h('div', { className: 'dndp-scroll' }, body))
 }
 const TERRAIN = {
-  '.': { k: 'ground', n: '地面', solid: false, difficult: false },
-  '#': { k: 'wall', n: '岩壁/墙', solid: true },
-  '~': { k: 'water', n: '溪水·困难', solid: false, difficult: true },
-  ',': { k: 'brush', n: '荆棘·困难+半掩体', solid: false, difficult: true, cover: 2 },
-  '^': { k: 'high', n: '高地/崖顶', solid: false },
-  'o': { k: 'cave', n: '洞口/黑暗', solid: false },
-  '+': { k: 'door', n: '门', solid: false },
-  '=': { k: 'plank', n: '木板/桥', solid: false },
-  'T': { k: 'tree', n: '树·半掩体', solid: false, cover: 2 },
-  '!': { k: 'fire', n: '篝火/光源', solid: false },
-  'x': { k: 'rubble', n: '碎石/废墟', solid: false, difficult: true },
+  '.': { k: 'floor', n: '石地' },
+  'g': { k: 'grass', n: '草地' },
+  'v': { k: 'dirt', n: '泥土' },
+  's': { k: 'pave', n: '石砖地' },
+  'w': { k: 'wood', n: '木地板' },
+  'f': { k: 'furn', n: '家具/桌椅·困难+半掩体', difficult: true, cover: 2 },
+  'p': { k: 'stair', n: '楼梯/斜坡' },
+  '#': { k: 'wall', n: '岩壁', solid: true },
+  'b': { k: 'brick', n: '砖墙', solid: true },
+  'c': { k: 'pillar', n: '岩柱', solid: true },
+  '~': { k: 'water', n: '浅水·困难', difficult: true },
+  'W': { k: 'deep', n: '深水·困难', difficult: true },
+  ',': { k: 'brush', n: '灌木/荆棘·困难+半掩体', difficult: true, cover: 2 },
+  '^': { k: 'ledge', n: '高地/崖顶' },
+  'o': { k: 'cave', n: '洞口/黑暗' },
+  '+': { k: 'door', n: '木门' },
+  '=': { k: 'plank', n: '木板/桥' },
+  'T': { k: 'tree', n: '树·半掩体', cover: 2 },
+  '!': { k: 'fire', n: '火堆/光源' },
+  'x': { k: 'rubble', n: '碎石/废墟·困难', difficult: true },
   ' ': { k: 'void', n: '虚空/未开', solid: true },
+}
+// 每格确定性微差：让重复瓦片不至于像贴瓷砖
+function cellVariation(x, y) {
+  let h = ((x + 1) * 73856093) ^ ((y + 1) * 19349663)
+  h = (h >>> 0)
+  const shade = (h % 7) * 0.012
+  return {
+    backgroundPosition: ((h % 23) - 11) + 'px ' + (((h >> 5) % 19) - 9) + 'px',
+    boxShadow: 'inset 0 0 0 40px rgba(0,0,0,' + shade.toFixed(3) + ')',
+  }
 }
 const cellName = (x, y) => {
   let s = '', n = Math.max(0, Math.floor(x))
@@ -1032,8 +1091,11 @@ function MapPanel(props) {
   const gridRef = React.useRef(null)
   const fitRef = React.useRef(null)
   const [fit, setFit] = React.useState(!!props.bare)
+  const [maps, setMaps] = React.useState(null)
+  const [nameDraft, setNameDraft] = React.useState(null)
+  const loadMaps = () => call('map.list', {}).then(r => { if (r && r.ok) setMaps(r) }).catch(() => { })
   const load = () => call('map.get', {}).then(r => { if (r && r.ok) { setMap(r); setErr('') } else setErr((r && r.error) || '读取地图失败') }).catch(e => setErr(String(e && e.message || e)))
-  React.useEffect(() => { load() }, [])
+  React.useEffect(() => { load(); loadMaps() }, [])
   React.useEffect(() => {
     const t = (typeof setInterval === 'function') ? setInterval(() => { if (!drag) load() }, 4000) : null
     return () => { if (t) clearInterval(t) }
@@ -1111,7 +1173,7 @@ function MapPanel(props) {
     for (let x = 0; x < map.w; x++) {
       const ch = row[x] || '.'
       const td = TERRAIN[ch] || TERRAIN['.']
-      cells.push(h('div', { key: x + '-' + y, className: 'dndp-cell g-' + td.k, onClick: () => onCellClick({ x, y }), title: cellName(x, y) + ' · ' + td.n + (td.cover ? '（AC+2）' : '') }))
+      cells.push(h('div', { key: x + '-' + y, className: 'dndp-cell g-' + td.k, style: cellVariation(x, y), onClick: () => onCellClick({ x, y }), title: cellName(x, y) + ' · ' + td.n + (td.solid ? '（不可通行）' : '') + (td.difficult ? '（困难地形）' : '') + (td.cover ? '（半掩体 AC+2）' : '') }))
     }
   }
   const m1 = meas.a, m2 = meas.b
@@ -1138,8 +1200,28 @@ function MapPanel(props) {
       h('circle', { cx: (m2.x + 0.5) * tile, cy: (m2.y + 0.5) * tile, r: 4, fill: 'var(--dsw-alias-brand-primary)' })) : null,
     (md && m1 && m2) ? h('div', { className: 'dndp-mlabel', style: { left: ((m1.x + m2.x) / 2 + 0.5) * tile, top: ((m1.y + m2.y) / 2 + 0.5) * tile } }, cellName(m1.x, m1.y) + '→' + cellName(m2.x, m2.y) + '：' + md.feetStandard + ' 尺 / ' + md.cells + ' 格') : null,
     (sel && map.tokens.find(t => t.id === sel)) ? (() => { const tk = map.tokens.find(t => t.id === sel); const reach = tk.speed ? Math.floor(tk.speed / 5) : 6; const ring = []; for (let dy = -reach; dy <= reach; dy++) for (let dx = -reach; dx <= reach; dx++) { const c = { x: tk.x + dx, y: tk.y + dy }; if (c.x < 0 || c.y < 0 || c.x >= map.w || c.y >= map.h) continue; const dd = cellDist({ x: tk.x, y: tk.y }, c); if (dd.feetStandard > 0 && dd.feetStandard <= tk.speed) ring.push(h('div', { key: 'r' + dx + '_' + dy, style: { position: 'absolute', left: c.x * tile, top: c.y * tile, width: tile, height: tile, background: 'rgba(90,160,255,.16)', border: '1px solid rgba(90,160,255,.25)', pointerEvents: 'none', zIndex: 4 } })) } return ring })() : null)
+  const switchMap = async (id) => { setMsg('切换中…'); const r = await call('map.use', { id: id }); if (r && r.ok) { setMap(r); loadMaps(); setMsg(r.summary || '已切换') } else setMsg('切换失败：' + ((r && r.error) || '')) }
+  const saveName = async () => {
+    if (nameDraft == null) return
+    const r = await call('map.rename', { name: nameDraft })
+    setNameDraft(null)
+    if (r && r.ok) { setMap(r); loadMaps(); setMsg(r.summary || '已改名') } else setMsg('改名失败：' + ((r && r.error) || ''))
+  }
+  const newMap = async () => {
+    const id = 'map-' + Date.now().toString(36)
+    const r = await call('map.create', { id: id, name: '新地图', w: map.w || 24, h: map.h || 16 })
+    if (r && r.ok) { setMap(r); loadMaps(); setMsg(r.summary || '已新建'); setNameDraft('新地图') } else setMsg('新建失败：' + ((r && r.error) || ''))
+  }
   const tools = h('div', { className: 'dndp-maptools' },
-    h('span', { className: 'dndp-chip' }, map.name || '未命名地图'),
+    maps && maps.items && maps.items.length ? h('select', {
+      className: 'dndp-input', style: { width: 150, flex: 'none' }, value: maps.current || '',
+      title: '切换地图（AI 也能用 map.use 切）',
+      onChange: e => switchMap(e.target.value),
+    }, maps.items.map(m => h('option', { key: m.id, value: m.id }, (m.name || m.id) + '（' + m.w + '×' + m.h + '）'))) : null,
+    nameDraft != null
+      ? h('input', { className: 'dndp-input', style: { width: 130, flex: 'none' }, value: nameDraft, autoFocus: true, onChange: e => setNameDraft(e.target.value), onKeyDown: e => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') setNameDraft(null) }, onBlur: saveName })
+      : h('button', { className: 'dndp-btn tiny', title: '改地图名', onClick: () => setNameDraft(map.name || '') }, '✎ ' + (map.name || '未命名')),
+    h('button', { className: 'dndp-btn tiny', title: '新建一张空地图', onClick: newMap }, '＋新建'),
     h('span', { className: 'dndp-chip' }, map.w + '×' + map.h + ' 格（每格 5 尺）'),
     h('button', { className: 'dndp-btn tiny' + (tool === 'move' ? ' primary' : ''), onClick: () => setTool('move') }, '移动'),
     h('button', { className: 'dndp-btn tiny' + (tool === 'measure' ? ' primary' : ''), onClick: () => { setTool('measure'); setMeas({ a: null, b: null }) } }, '测距'),
