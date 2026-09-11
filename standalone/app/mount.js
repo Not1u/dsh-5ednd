@@ -107,5 +107,15 @@
     console.log('[solo-trpg] UI ready:', src.length, 'bytes, tabs:', tabs.map((t) => t.title).join(','))
   }
 
+  function paintShell(th) {
+    try {
+      const de = document.documentElement
+      if (th && th.accent) de.style.setProperty('--solo-accent', th.accent)
+      de.classList.toggle('solo-light', !!(th && th.mode === 'light'))
+    } catch (e) { }
+  }
+  window.addEventListener('solotrpg-theme', function (ev) { paintShell(ev.detail) })
+  host.call('theme.get', {}).then(function (r) { if (r && r.ok) paintShell(r.theme) }).catch(function () { })
+
   main()
 })()

@@ -1510,6 +1510,43 @@ return {
         })
       } catch (e) { return { ok: false, error: String(e && e.message || e) } }
     }))
+    // ===== 主题（界面配色）：存 data/theme.json =====
+    const THEME_PATH = ROOT + '/data/theme.json'
+    const THEME_PRESETS = {
+      azure: { name: 'azure', label: '幽蓝', accent: '#5aa0ff' },
+      emerald: { name: 'emerald', label: '翡翠', accent: '#4fbf8b' },
+      amber: { name: 'amber', label: '琥珀', accent: '#e0a64a' },
+      violet: { name: 'violet', label: '紫罗兰', accent: '#a98bff' },
+      rose: { name: 'rose', label: '绯樱', accent: '#e07a98' },
+      slate: { name: 'slate', label: '石板灰', accent: '#93a7bd' },
+    }
+    const DEFAULT_THEME = { name: 'azure', mode: 'dark', accent: '#5aa0ff', lineBoost: true }
+    const normTheme = (t) => {
+      const o = Object.assign({}, DEFAULT_THEME, t || {})
+      if (!THEME_PRESETS[o.name]) o.name = 'azure'
+      if (o.mode !== 'light') o.mode = 'dark'
+      if (!/^#[0-9a-fA-F]{6}$/.test(String(o.accent || ''))) o.accent = THEME_PRESETS[o.name].accent
+      o.lineBoost = o.lineBoost !== false
+      return o
+    }
+    unreg.push(harness.handle('theme.get', async () => {
+      try {
+        let t = null
+        try { t = JSON.parse(await fsRead(THEME_PATH)) } catch (e) { }
+        return { ok: true, theme: normTheme(t), presets: THEME_PRESETS, path: THEME_PATH, isDefault: !t }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('theme.set', async (args) => {
+      try {
+        const a = args || {}
+        const t = normTheme(a.theme || a.patch || a)
+        const txt = JSON.stringify(t, null, 2)
+        let saved = false, saveError = ''
+        if (typeof DND5E_WRITE === 'function') { try { const r = await DND5E_WRITE(THEME_PATH, txt); saved = !!(r && r.ok); saveError = (r && r.error) || '' } catch (e) { saveError = String(e && e.message || e) } }
+        if (!saved) { try { const fs = await ctx.get('fs'); const p = await fs.resolve(THEME_PATH); if (fs && typeof fs.writeText === 'function') { await fs.writeText(p, txt); saved = true } } catch (e) { } }
+        return { ok: true, theme: t, saved: saved, saveError: saveError, summary: '主题已保存：' + THEME_PRESETS[t.name].label + ' · ' + (t.mode === 'light' ? '浅色' : '深色') + ' · ' + t.accent }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
     return () => { unreg.forEach(f => f()) }
   }
 }

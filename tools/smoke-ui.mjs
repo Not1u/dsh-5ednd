@@ -71,6 +71,7 @@ const CANNED = {
   'ext.image.map': { ok: true, summary: '已导出 data/images/map-test.svg' },
   'ai.history': { ok: true, messages: [{ role: 'user', content: '我推门进去' }, { role: 'assistant', content: '门后是一间库房。', steps: '· log.append ✔' }], model: 'gpt-4o-mini' },
   'ai.tools': { ok: true, count: 42 },
+  'theme.get': { ok: true, theme: { name: 'emerald', mode: 'light', accent: '#4fbf8b' }, presets: { emerald: { name: 'emerald', label: '翡翠', accent: '#4fbf8b' } } },
   'settings.get': { ok: true, path: 'data/ai.json', config: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', temperature: 0.7, maxSteps: 6, extraPrompt: '' }, hasKey: true, keyMask: 'sk-••••abcd', presets: { openai: 'https://api.openai.com/v1', ollama: 'http://127.0.0.1:11434/v1' } },
   'build.options': { ok: true, races: [], classes: [], backgrounds: [], weapons: [], armor: [], packs: [] },
 }
@@ -133,7 +134,7 @@ function captureScope(code) {
   if (!code.includes(marker)) return code
   const names = ['Card', 'Pips', 'XpWidget', 'Sect', 'ChoiceBox', 'LevelSet', 'ManualEdit', 'StatusPanel', 'EquipPanel',
     'Bag', 'RulesPanel', 'Multiclass', 'Wizard', 'Detail', 'MapPanel', 'LogView', 'LogRow', 'DiceBar', 'PartyView',
-    'Workspace', 'Roster', 'SheetHost', 'StatsPanel', 'PanelFrame', 'AIPanel', 'SettingsPanel', 'PANEL_DEFS', 'DEFAULT_LAYOUT', 'normLayout',
+    'Workspace', 'Roster', 'SheetHost', 'StatsPanel', 'PanelFrame', 'AIPanel', 'SettingsPanel', 'onAccentOf', 'normThemeLocal', 'themeClassOf', 'themeStyleOf', 'THEME_LIST', 'PANEL_DEFS', 'DEFAULT_LAYOUT', 'normLayout',
     'slotOf', 'inLayout', 'cellDist', 'cloneLayout', 'reorderPanels', 'TERRAIN', 'WS_SLOTS']
   return code.replace(marker, 'globalThis.__UI_SCOPE__ = { ' + names.join(', ') + ' }\n' + marker)
 }
@@ -246,7 +247,7 @@ tryRender('Wizard', {})
 tryRender('PartyView', {})
 tryRender('Workspace', {})
 tryRender('AIPanel', { onOpen() { } })
-tryRender('SettingsPanel', { toolCount: 42 })
+tryRender('SettingsPanel', { toolCount: 42, theme: { name: 'amber', mode: 'dark', accent: '#e0a64a' }, onTheme: async () => ({ ok: true }) })
 for (const t of tabs) { try { walk(t.component(), 0); rendered.push('页签 ' + t.title + ' ✔') } catch (e) { problems.push('页签 ' + t.title + ' 渲染异常：' + (e && e.message || e)) } }
 
 // ---------- 4) 深度：两遍渲染真工作区 ----------
@@ -319,6 +320,21 @@ function pureChecks() {
   }
   const slotOf = scope.slotOf
   if (typeof slotOf === 'function' && slotOf(nl(scope.DEFAULT_LAYOUT), 'map') !== 'center') problems.push('默认布局里 map 应该在 center')
+  // 主题：亮度判定 + 规范化
+  const oa = scope.onAccentOf, nt = scope.normThemeLocal, tcl = scope.themeClassOf
+  let themeOk = true
+  if (typeof oa === 'function') {
+    if (oa('#ffffff') !== '#0d1015') problems.push('白色强调色上应该用深色文字：' + oa('#ffffff'))
+    if (oa('#101820') !== '#ffffff') problems.push('深色强调色上应该用白色文字：' + oa('#101820'))
+  }
+  if (typeof nt === 'function') {
+    const bad = nt({ name: 'nope', mode: 'weird', accent: 'red' })
+    if (bad.name !== 'azure' || bad.mode !== 'dark' || bad.accent !== '#5aa0ff') problems.push('非法主题没有回退到默认：' + JSON.stringify(bad))
+  }
+  if (typeof tcl === 'function') {
+    if (tcl({ name: 'rose', mode: 'light', accent: '#e07a98' }) !== 'dndp-theme-rose dndp-light') problems.push('主题 class 组合不对：' + tcl({ name: 'rose', mode: 'light', accent: '#e07a98' }))
+  }
+  if (themeOk && typeof oa === 'function' && typeof tcl === 'function') notes.push('主题断言：明暗文字自动切换 / 非法值回退默认 / class 组合正确')
   // 拖动落位：跨槽位 / 同槽位重排 / 权重与面板数一致
   const rp = scope.reorderPanels
   if (typeof rp === 'function') {

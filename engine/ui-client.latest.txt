@@ -24,18 +24,52 @@ const call = async (name, args) => {
   throw new Error('[dnd-5ednd] no transport for ' + name)
 }
 const css = `
+/* ===== 主题层：自己定义全部设计 token（独立运行时也可用），作用域只在自己的容器内 ===== */
+.dndp-ws,.dndp-root,.dndp-overlay{
+  --dsw-alias-bg-base:#14161a; --dsw-alias-bg-layer-1:#1a1d22; --dsw-alias-bg-layer-2:#21252b;
+  --dsw-alias-bg-overlay:#282d35; --dsw-alias-border-l1:#2c323a; --dsw-alias-border-l2:#3b434e;
+  --dsw-alias-label-primary:#e8ecf1; --dsw-alias-label-secondary:#9aa4b0; --dsw-alias-label-tertiary:#6f7883;
+  --dsw-alias-brand-primary:#5aa0ff; --dsw-alias-state-error-primary:#e0614f;
+  --dndp-on-accent:#0d1015;
+  --dndp-line:#39434f; --dndp-line-soft:#272e37;
+  --dndp-line-accent:color-mix(in srgb, var(--dsw-alias-brand-primary) 42%, #333c47);
+  --dndp-glow:color-mix(in srgb, var(--dsw-alias-brand-primary) 22%, transparent);
+  --dndp-surface-tint:color-mix(in srgb, var(--dsw-alias-brand-primary) 7%, var(--dsw-alias-bg-layer-2));
+  --dndp-radius:10px;
+  --dndp-t-ground:#3a3d42; --dndp-t-wall:#1b1e22; --dndp-t-water:#2a4a6b; --dndp-t-brush:#2d4a30;
+  --dndp-t-high:#5a4a32; --dndp-t-cave:#0e0f13; --dndp-t-door:#6b5330; --dndp-t-plank:#4a3a22;
+  --dndp-t-tree:#204021; --dndp-t-fire:#6b4a20; --dndp-t-rubble:#403b34; --dndp-t-void:#07080a;
+}
+.dndp-theme-azure{--dsw-alias-brand-primary:#5aa0ff}
+.dndp-theme-emerald{--dsw-alias-brand-primary:#4fbf8b}
+.dndp-theme-amber{--dsw-alias-brand-primary:#e0a64a}
+.dndp-theme-violet{--dsw-alias-brand-primary:#a98bff}
+.dndp-theme-rose{--dsw-alias-brand-primary:#e07a98}
+.dndp-theme-slate{--dsw-alias-brand-primary:#93a7bd}
+.dndp-light{
+  --dsw-alias-bg-base:#f2f5f9; --dsw-alias-bg-layer-1:#ffffff; --dsw-alias-bg-layer-2:#eaeff5;
+  --dsw-alias-bg-overlay:#ffffff; --dsw-alias-border-l1:#d5dde7; --dsw-alias-border-l2:#bcc7d5;
+  --dsw-alias-label-primary:#1b2027; --dsw-alias-label-secondary:#5b6675; --dsw-alias-label-tertiary:#8b95a3;
+  --dsw-alias-state-error-primary:#c94a38;
+  --dndp-line:#b9c6d6; --dndp-line-soft:#dde4ec;
+  --dndp-line-accent:color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, #a9b7c7);
+  --dndp-surface-tint:color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, #ffffff);
+  --dndp-t-ground:#d9dee5; --dndp-t-wall:#8d97a3; --dndp-t-water:#a8cbe8; --dndp-t-brush:#bcd9b8;
+  --dndp-t-high:#e0cfa8; --dndp-t-cave:#3c4450; --dndp-t-door:#dcc08a; --dndp-t-plank:#cbb08a;
+  --dndp-t-tree:#9ec79c; --dndp-t-fire:#e8b47a; --dndp-t-rubble:#cbc4b8; --dndp-t-void:#e6eaf0;
+}
 .dndp-root{display:flex;flex-direction:column;height:100%;box-sizing:border-box;color:var(--dsw-alias-label-primary);font-size:13px;line-height:1.55}
 .dndp-header{display:flex;align-items:center;gap:10px;padding:10px 14px;font-weight:600;font-size:13px;border-bottom:1px solid var(--dsw-alias-border-l1);flex:none}
 .dndp-ic{width:26px;height:26px;border-radius:7px;background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);display:inline-flex;align-items:center;justify-content:center;font-size:13px;flex:none}
 .dndp-sp{flex:1}
 .dndp-btn{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-primary);border-radius:7px;padding:4px 12px;font-size:13px;cursor:pointer}
 .dndp-btn:hover{background:var(--dsw-alias-bg-overlay)}
-.dndp-btn.primary{background:var(--dsw-alias-brand-primary);border-color:transparent;color:var(--dsw-alias-bg-base)}
+.dndp-btn.primary{background:var(--dsw-alias-brand-primary);border-color:transparent;color:var(--dndp-on-accent)}
 .dndp-btn:disabled{opacity:.5;cursor:default}
 .dndp-scroll{overflow:auto;flex:1;padding-bottom:18px}
 .dndp-row{display:flex;align-items:center;gap:11px;padding:9px 14px;border-bottom:1px solid var(--dsw-alias-border-l1);cursor:pointer}
 .dndp-row:hover{background:var(--dsw-alias-bg-layer-2)}
-.dndp-ava{width:30px;height:30px;border-radius:50%;background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-bg-base);display:flex;align-items:center;justify-content:center;font-weight:700;flex:none;font-size:13px}
+.dndp-ava{width:30px;height:30px;border-radius:50%;background:var(--dsw-alias-brand-primary);color:var(--dndp-on-accent);display:flex;align-items:center;justify-content:center;font-weight:700;flex:none;font-size:13px}
 .dndp-main{flex:1;min-width:0}
 .dndp-name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dndp-sub{color:var(--dsw-alias-label-secondary);font-size:12px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -98,7 +132,7 @@ const css = `
 .dndp-tipf .tp-item{margin-bottom:5px}
 .dndp-tipf .tp-item b{font-weight:600}
 .dndp-tipf .tp-item .tp-desc{color:var(--dsw-alias-label-secondary)}
-.dndp-hl{background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-bg-base);border-radius:3px;padding:0 2px;font-weight:600}
+.dndp-hl{background:var(--dsw-alias-brand-primary);color:var(--dndp-on-accent);border-radius:3px;padding:0 2px;font-weight:600}
 .dndp-dicebox{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);border-radius:10px;padding:8px 10px;margin:10px 12px}
 .dndp-logbar{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
 .dndp-logbar:last-child{margin-bottom:0}
@@ -126,18 +160,18 @@ const css = `
 .dndp-mapwrap{position:relative;overflow:auto;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-1)}
 .dndp-mapgrid{display:grid;position:relative;width:max-content}
 .dndp-cell{width:var(--dndp-tile);height:var(--dndp-tile);box-sizing:border-box;border-right:1px solid rgba(128,128,128,.18);border-bottom:1px solid rgba(128,128,128,.18);position:relative;display:flex;align-items:center;justify-content:center;font-size:10px;color:rgba(160,160,160,.55);cursor:crosshair}
-.dndp-cell.g-ground{background:#3a3d42}
-.dndp-cell.g-wall{background:#1b1e22}
-.dndp-cell.g-water{background:#2a4a6b}
-.dndp-cell.g-brush{background:#2d4a30}
-.dndp-cell.g-high{background:#5a4a32}
-.dndp-cell.g-cave{background:#0e0f13}
-.dndp-cell.g-door{background:#6b5330}
-.dndp-cell.g-plank{background:#4a3a22}
-.dndp-cell.g-tree{background:#204021}
-.dndp-cell.g-fire{background:#6b4a20}
-.dndp-cell.g-rubble{background:#403b34}
-.dndp-cell.g-void{background:#07080a}
+.dndp-cell.g-ground{background:var(--dndp-t-ground)}
+.dndp-cell.g-wall{background:var(--dndp-t-wall)}
+.dndp-cell.g-water{background:var(--dndp-t-water)}
+.dndp-cell.g-brush{background:var(--dndp-t-brush)}
+.dndp-cell.g-high{background:var(--dndp-t-high)}
+.dndp-cell.g-cave{background:var(--dndp-t-cave)}
+.dndp-cell.g-door{background:var(--dndp-t-door)}
+.dndp-cell.g-plank{background:var(--dndp-t-plank)}
+.dndp-cell.g-tree{background:var(--dndp-t-tree)}
+.dndp-cell.g-fire{background:var(--dndp-t-fire)}
+.dndp-cell.g-rubble{background:var(--dndp-t-rubble)}
+.dndp-cell.g-void{background:var(--dndp-t-void)}
 .dndp-cell.msel{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px;z-index:3}
 .dndp-tok{position:absolute;box-sizing:border-box;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;border:2px solid rgba(255,255,255,.85);box-shadow:0 2px 6px rgba(0,0,0,.5);cursor:grab;user-select:none;z-index:5;line-height:1}
 .dndp-tok.drag{cursor:grabbing;z-index:9;opacity:.9}
@@ -160,21 +194,26 @@ const css = `
 .dndp-overlay .dndp-ovhead{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--dsw-alias-bg-layer-2);border-bottom:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-primary);font-weight:600}
 .dndp-overlay .dndp-ovbody{flex:1;overflow:auto;padding:12px;background:var(--dsw-alias-bg-base)}
 /* ===== 工作区（IDE 式多面板）===== */
-.dndp-ws{display:flex;flex-direction:column;height:100%;min-height:0;box-sizing:border-box;color:var(--dsw-alias-label-primary);font-size:13px;background:var(--dsw-alias-bg-base)}
-.dndp-ws-top{flex:none;display:flex;align-items:center;gap:9px;padding:6px 10px;border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);flex-wrap:wrap}
+.dndp-ws{display:flex;flex-direction:column;height:100%;min-height:0;box-sizing:border-box;color:var(--dsw-alias-label-primary);font-size:13px;background:radial-gradient(1200px 620px at 18% -12%, var(--dndp-glow), transparent 70%), var(--dsw-alias-bg-base)}
+.dndp-ws-top{flex:none;display:flex;align-items:center;gap:9px;padding:6px 10px;background:var(--dsw-alias-bg-layer-2);flex-wrap:wrap;border-bottom:1px solid var(--dndp-line);box-shadow:0 2px 0 -1px var(--dndp-glow),0 6px 14px -12px var(--dndp-glow)}
 .dndp-ws-top .logo{font-weight:700}
 .dndp-ws-main{flex:1;display:flex;min-height:0}
-.dndp-ws-col{display:flex;flex-direction:column;min-width:0;min-height:0}
+.dndp-ws-col{display:flex;flex-direction:column;min-width:0;min-height:0;border:1px solid var(--dndp-line-soft);border-radius:12px;background:color-mix(in srgb, var(--dsw-alias-bg-base) 72%, transparent);transition:border-color .18s ease,background .18s ease}
+.dndp-ws-col.slim{border-style:dashed;border-color:var(--dndp-line-accent);background:transparent}
 .dndp-ws-row{display:flex;flex-direction:row;min-width:0;min-height:0}
-.dndp-ws-split{flex:none;background:var(--dsw-alias-border-l1);position:relative;z-index:6}
-.dndp-ws-split.v{width:5px;cursor:col-resize}
-.dndp-ws-split.h{height:5px;cursor:row-resize}
-.dndp-ws-split:hover,.dndp-ws-split.on{background:var(--dsw-alias-brand-primary)}
+.dndp-ws-split{flex:none;position:relative;z-index:6;background:transparent}
+.dndp-ws-split.v{width:7px;cursor:col-resize}
+.dndp-ws-split.h{height:7px;cursor:row-resize}
+.dndp-ws-split::after{content:'';position:absolute;background:var(--dndp-line);border-radius:2px;transition:background .16s ease,box-shadow .16s ease}
+.dndp-ws-split.v::after{left:50%;top:0;bottom:0;width:2px;transform:translateX(-50%)}
+.dndp-ws-split.h::after{top:50%;left:0;right:0;height:2px;transform:translateY(-50%)}
+.dndp-ws-split:hover::after,.dndp-ws-split.on::after{background:var(--dsw-alias-brand-primary);box-shadow:0 0 8px var(--dndp-glow)}
 .dndp-ws-inner{display:flex;flex-direction:column;min-height:0;min-width:0}
 .dndp-ws-inner.h{flex-direction:row}
-.dndp-panel{display:flex;flex-direction:column;min-height:0;min-width:0;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);overflow:hidden}
-.dndp-panel.max{border-color:var(--dsw-alias-brand-primary)}
-.dndp-ptitle{flex:none;display:flex;align-items:center;gap:6px;padding:4px 8px;background:var(--dsw-alias-bg-layer-2);border-bottom:1px solid var(--dsw-alias-border-l1);font-size:12px;font-weight:600;cursor:default;user-select:none}
+.dndp-panel{display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden;border:1px solid var(--dndp-line);border-radius:var(--dndp-radius);background:var(--dsw-alias-bg-layer-1);box-shadow:0 1px 0 rgba(255,255,255,.03) inset,0 8px 18px -16px rgba(0,0,0,.9)}
+.dndp-panel::before{content:'';position:absolute;left:0;top:0;bottom:0;width:2px;background:linear-gradient(180deg,var(--dndp-line-accent),transparent 62%);pointer-events:none}
+.dndp-panel.max{border-color:var(--dsw-alias-brand-primary);box-shadow:0 0 0 1px var(--dndp-glow),0 8px 18px -14px rgba(0,0,0,.9)}
+.dndp-ptitle{flex:none;display:flex;align-items:center;gap:6px;padding:5px 8px;font-size:12px;font-weight:600;cursor:default;user-select:none;background:linear-gradient(180deg,var(--dndp-surface-tint),var(--dsw-alias-bg-layer-2));border-bottom:1px solid var(--dndp-line-soft);box-shadow:inset 0 -2px 0 -1px var(--dndp-line-accent)}
 .dndp-ptitle .sp{flex:1}
 .dndp-pbtn{border:1px solid transparent;background:transparent;color:var(--dsw-alias-label-secondary);border-radius:5px;padding:0 6px;font-size:12px;cursor:pointer;line-height:18px}
 .dndp-pbtn:hover{background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-border-l2)}
@@ -201,7 +240,7 @@ const css = `
 .dndp-msg.me{align-self:flex-end;align-items:flex-end}
 .dndp-who{font-size:11px;color:var(--dsw-alias-label-secondary)}
 .dndp-bubble{padding:7px 10px;border-radius:10px;background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);white-space:pre-wrap;word-break:break-word;line-height:1.6}
-.dndp-msg.me .dndp-bubble{background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-bg-base);border-color:transparent}
+.dndp-msg.me .dndp-bubble{background:var(--dsw-alias-brand-primary);color:var(--dndp-on-accent);border-color:transparent}
 .dndp-msg.err .dndp-bubble{border-color:var(--dsw-alias-state-error-primary);color:var(--dsw-alias-state-error-primary)}
 .dndp-steps{border:1px dashed var(--dsw-alias-border-l2);border-radius:8px;padding:5px 8px;font-size:11px;color:var(--dsw-alias-label-secondary)}
 .dndp-steps b{color:var(--dsw-alias-label-primary)}
@@ -1299,6 +1338,7 @@ function Workspace() {
   const [menu, setMenu] = React.useState(false)
   const [msg, setMsg] = React.useState('')
   const [pDrag, setPDrag] = React.useState(null)   // 面板拖动：{id, slot, index, x, y, over:{slot,index,bar}}
+  const [theme, setTheme, presets] = useTheme()
   const rootRef = React.useRef(null)
   const dragRef = React.useRef(null)
   const saveTimer = React.useRef(null)
@@ -1490,7 +1530,7 @@ function Workspace() {
     window.addEventListener('pointerup', onUp)
   }
 
-  if (!layout) return h('div', { className: 'dndp-root' }, h('div', { className: 'dndp-header' }, h('span', { className: 'dndp-ic' }, '⚔'), h('span', null, '工作区'), h('div', { className: 'dndp-sp' }), h('span', { className: 'dndp-chip' }, '加载布局…')))
+  if (!layout) return h('div', { className: 'dndp-root ' + themeClassOf(theme), style: themeStyleOf(theme) }, h('div', { className: 'dndp-header' }, h('span', { className: 'dndp-ic' }, '⚔'), h('span', null, '工作区'), h('div', { className: 'dndp-sp' }), h('span', { className: 'dndp-chip' }, '加载布局…')))
 
   const panelProps = { layout, activeId, rev, onOpen: openPanel }
   const renderPanel = (pid, slot, index, total) => {
@@ -1502,7 +1542,7 @@ function Workspace() {
       if (pid === 'map') return h(MapPanel, { bare: true })
       if (pid === 'log') return h(LogView, { bare: true, party: party, onBack: null })
       if (pid === 'ai') return h(AIPanel, { onOpen: openPanel })
-      if (pid === 'settings') return h(SettingsPanel, { toolCount: toolCount })
+      if (pid === 'settings') return h(SettingsPanel, { toolCount: toolCount, theme: theme, onTheme: async (t) => { const nt = setTheme(t); const r = await call('theme.set', { theme: nt }); return r }, presets: presets })
       if (pid === 'rules') return h('div', { style: { padding: '10px 12px' } }, h(RulesPanel, {}))
       if (pid === 'stats') return h(StatsPanel, {})
       if (pid === 'builder') return h(Wizard, { onDone: () => { setRev(r => r + 1); closePanel('builder') }, onBack: () => closePanel('builder') })
@@ -1536,7 +1576,7 @@ function Workspace() {
 
   if (layout.maximized && inLayout(layout, layout.maximized)) {
     const pid = layout.maximized
-    return h('div', { className: 'dndp-ws', ref: rootRef },
+    return h('div', { className: 'dndp-ws ' + themeClassOf(theme), style: themeStyleOf(theme), ref: rootRef },
       h('div', { className: 'dndp-ws-top' }, h('span', { className: 'logo' }, '⚔ SoloTRPG'), h('span', { className: 'dndp-chip' }, PANEL_DEFS[pid].title + ' · 最大化'), h('div', { className: 'dndp-sp' }),
         h('button', { className: 'dndp-btn tiny', onClick: () => toggleMax(pid) }, '还原布局')),
       h('div', { className: 'dndp-ws-main' }, h('div', { style: { flex: 1, display: 'flex', minHeight: 0, padding: 6 } }, renderPanel(pid, slotOf(layout, pid) || 'center', 0, 1))))
@@ -1575,7 +1615,7 @@ function Workspace() {
     ((PANEL_DEFS[pDrag.id] || {}).icon || '▫') + ' ' + ((PANEL_DEFS[pDrag.id] || {}).title || pDrag.id)) : null
   const dropBar = (pDrag && pDrag.over && pDrag.over.bar) ? h('div', { className: 'dndp-drop', style: { position: 'fixed', left: pDrag.over.bar.x, top: pDrag.over.bar.y, width: pDrag.over.bar.w, height: pDrag.over.bar.h } }) : null
 
-  return h('div', { className: 'dndp-ws' + (pDrag ? ' dragging' : ''), ref: rootRef },
+  return h('div', { className: 'dndp-ws ' + themeClassOf(theme) + (pDrag ? ' dragging' : ''), style: themeStyleOf(theme), ref: rootRef },
     h('div', { className: 'dndp-ws-top' },
       h('span', { className: 'logo' }, '⚔ SoloTRPG'),
       h('span', { className: 'dndp-chip' }, '工作区'),
@@ -1595,6 +1635,55 @@ function Workspace() {
     ghost, dropBar)
 }
 
+// ============ 主题 ============
+const DEFAULT_THEME = { name: 'azure', mode: 'dark', accent: '#5aa0ff', lineBoost: true }
+const THEME_LIST = [['azure', '幽蓝'], ['emerald', '翡翠'], ['amber', '琥珀'], ['violet', '紫罗兰'], ['rose', '绯樱'], ['slate', '石板灰']]
+const ACCENT_SWATCH = ['#5aa0ff', '#4fbf8b', '#e0a64a', '#a98bff', '#e07a98', '#93a7bd', '#4dd0e1', '#ff8a65']
+let THEME_CACHE = null
+function normThemeLocal(t) {
+  const o = Object.assign({}, DEFAULT_THEME, t || {})
+  if (!THEME_LIST.some(x => x[0] === o.name)) o.name = 'azure'
+  if (o.mode !== 'light') o.mode = 'dark'
+  if (!/^#[0-9a-fA-F]{6}$/.test(String(o.accent || ''))) o.accent = '#5aa0ff'
+  return o
+}
+// 强调色上的文字用黑还是白：按相对亮度自动选
+function onAccentOf(hex) {
+  const h = String(hex || '').replace('#', '')
+  if (h.length !== 6) return '#0d1015'
+  const r = parseInt(h.slice(0, 2), 16) / 255, g = parseInt(h.slice(2, 4), 16) / 255, b = parseInt(h.slice(4, 6), 16) / 255
+  const lin = (c) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4))
+  const L = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+  return L > 0.45 ? '#0d1015' : '#ffffff'
+}
+function themeClassOf(t) { const th = normThemeLocal(t); return 'dndp-theme-' + th.name + (th.mode === 'light' ? ' dndp-light' : '') }
+function themeStyleOf(t) { const th = normThemeLocal(t); return { '--dsw-alias-brand-primary': th.accent, '--dndp-on-accent': onAccentOf(th.accent) } }
+function applyThemeGlobally(t) {
+  const th = normThemeLocal(t)
+  THEME_CACHE = th
+  try {
+    if (typeof document !== "undefined" && document.documentElement) {
+      const de = document.documentElement
+      de.style.setProperty('--solo-accent', th.accent)
+      de.style.setProperty('--solo-on-accent', onAccentOf(th.accent))
+      de.style.setProperty('--solo-mode', th.mode)
+    }
+    if (typeof window !== 'undefined' && window.dispatchEvent) window.dispatchEvent(new CustomEvent('solotrpg-theme', { detail: th }))
+  } catch (e) { }
+}
+function useTheme() {
+  const [th, setTh] = React.useState(THEME_CACHE || normThemeLocal(DEFAULT_THEME))
+  const [presets, setPresets] = React.useState(null)
+  React.useEffect(() => {
+    if (THEME_CACHE) return
+    call('theme.get', {}).then(r => {
+      if (r && r.ok) { const t = normThemeLocal(r.theme); setTh(t); applyThemeGlobally(t) }
+      if (r && r.ok && r.presets) setPresets(r.presets)
+    }).catch(() => { })
+  }, [])
+  const set = (t) => { const nt = normThemeLocal(t); setTh(nt); applyThemeGlobally(nt); return nt }
+  return [th, set, presets]
+}
 function SettingsPanel(props) {
   const [st, setSt] = React.useState(null)
   const [f, setF] = React.useState({ baseUrl: '', model: '', temperature: '0.7', maxSteps: '6', extraPrompt: '' })
@@ -1619,9 +1708,29 @@ function SettingsPanel(props) {
   }
   const test = async () => { setBusy(true); setMsg('测试中…'); const r = await call('ai.test', {}); setMsg(r && r.ok ? r.summary : ('测试失败：' + ((r && r.error) || '') + (r && r.detail ? ('\n' + r.detail) : ''))); setBusy(false) }
   const clearKey = async () => { const r = await call('settings.set', { patch: { clearKey: true } }); setMsg(r && r.ok ? '密钥已清除' : '清除失败'); load() }
+  const th = normThemeLocal(props.theme || DEFAULT_THEME)
+  const pickTheme = async (patch) => {
+    const nt = normThemeLocal(Object.assign({}, th, patch))
+    if (props.onTheme) await props.onTheme(nt)
+    setMsg('主题：' + (THEME_LIST.find(x => x[0] === nt.name) || ['', nt.name])[1] + ' · ' + (nt.mode === 'light' ? '浅色' : '深色') + ' · ' + nt.accent)
+  }
+  const appearance = h('div', { key: 'ap', style: { marginBottom: 12 } },
+    h('div', { className: 'dndp-label', style: { marginBottom: 6 } }, '外观主题'),
+    h('div', { className: 'dndp-chips' }, THEME_LIST.map(([k, label]) => h('button', {
+      key: k, className: 'dndp-btn tiny' + (th.name === k ? ' primary' : ''), onClick: () => pickTheme({ name: k }),
+    }, label))),
+    h('div', { className: 'dndp-chips', style: { marginTop: 6, alignItems: 'center' } },
+      h('button', { className: 'dndp-btn tiny' + (th.mode === 'dark' ? ' primary' : ''), onClick: () => pickTheme({ mode: 'dark' }) }, '深色'),
+      h('button', { className: 'dndp-btn tiny' + (th.mode === 'light' ? ' primary' : ''), onClick: () => pickTheme({ mode: 'light' }) }, '浅色'),
+      h('span', { className: 'dndp-note' }, '强调色'),
+      h('input', { type: 'color', value: th.accent, onChange: e => pickTheme({ accent: e.target.value }), style: { width: 38, height: 26, padding: 0, border: '1px solid var(--dndp-line)', borderRadius: 6, background: 'transparent' } }),
+      ...ACCENT_SWATCH.map(c => h('button', { key: c, title: c, onClick: () => pickTheme({ accent: c }), style: { width: 22, height: 22, borderRadius: 6, border: th.accent.toLowerCase() === c ? '2px solid var(--dsw-alias-label-primary)' : '1px solid var(--dndp-line)', background: c, cursor: 'pointer', padding: 0 } })),
+      h('button', { className: 'dndp-btn tiny', onClick: () => pickTheme({ name: 'azure', mode: 'dark', accent: '#5aa0ff' }) }, '恢复默认')),
+    h('div', { className: 'hint', style: { marginTop: 5 } }, '主题只作用于本插件界面（不会改动 DSH 自身配色），保存在 data/theme.json，切面板/刷新都保留。'))
   if (!st) return h('div', { className: 'dndp-empty' }, msg || '读取设置…')
   const row = (label, hint, node) => h('div', { key: label, className: 'dndp-setrow' }, h('label', null, label), node, hint ? h('div', { className: 'hint' }, hint) : null)
   return h('div', { style: { padding: '10px 12px' } },
+    appearance,
     h('div', { key: 'w', className: 'dndp-warn' }, '密钥以明文保存在 ' + st.path + '（本机文件）。也可以用环境变量 DND5E_AI_KEY 覆盖' + (st.keyFromEnv ? '（当前正由环境变量提供）' : '') + '。不要把该文件提交到公开仓库。'),
     row('API Base URL', '兼容 OpenAI 的 /chat/completions；末尾不用带 /。快捷：' + Object.keys(st.presets).join(' / '),
       h('div', { key: 'u' }, h('input', { className: 'dndp-input', value: f.baseUrl, onChange: e => setF(Object.assign({}, f, { baseUrl: e.target.value })) }),
@@ -1707,6 +1816,7 @@ function AIPanel(props) {
 }
 
 function PartyView() {
+  const [theme] = useTheme()
   const [mode, setMode] = React.useState('list')
   const [list, setList] = React.useState(null)
   const [err, setErr] = React.useState('')
@@ -1733,7 +1843,7 @@ function PartyView() {
   if (err) rows.push(h('div', { key: 'e', className: 'dndp-err' }, err))
   if (list && !list.length) rows.push(h('div', { key: 'z', className: 'dndp-empty' }, '暂无角色，点“+ 新建角色”'))
   ;(list || []).forEach((l, i) => rows.push(h('div', { key: i, className: 'dndp-row', onClick: () => open(l.id) }, h('div', { className: 'dndp-ava' }, (l.name || '?').slice(0, 1)), h('div', { className: 'dndp-main' }, h('div', { className: 'dndp-name' }, l.name), h('div', { className: 'dndp-sub' }, (l.race || '') + (l.cls ? ' · ' + l.cls : ''))), h('span', { className: 'dndp-chip' }, 'L' + l.level), h('span', { className: 'dndp-chip' }, 'HP ' + l.hp + '/' + l.max))))
-  return h('div', { className: 'dndp-root' }, h('div', { className: 'dndp-header' }, h('span', { className: 'dndp-ic' }, '⚔'), h('span', null, 'D&D 5e 角色'), h('div', { className: 'dndp-sp' }), h(UiBadge, null), h('button', { className: 'dndp-btn', onClick: () => setMode('map') }, '🗺 地图'), h('button', { className: 'dndp-btn', onClick: () => setMode('log') }, '🎲 战斗记录'), h('button', { className: 'dndp-btn primary', onClick: () => setMode('build') }, '+ 新建角色')), h('div', { className: 'dndp-scroll' }, rows))
+  return h('div', { className: 'dndp-root ' + themeClassOf(theme), style: themeStyleOf(theme) }, h('div', { className: 'dndp-header' }, h('span', { className: 'dndp-ic' }, '⚔'), h('span', null, 'D&D 5e 角色'), h('div', { className: 'dndp-sp' }), h(UiBadge, null), h('button', { className: 'dndp-btn', onClick: () => setMode('map') }, '🗺 地图'), h('button', { className: 'dndp-btn', onClick: () => setMode('log') }, '🎲 战斗记录'), h('button', { className: 'dndp-btn primary', onClick: () => setMode('build') }, '+ 新建角色')), h('div', { className: 'dndp-scroll' }, rows))
 }
 return {
   apply(ctx) {
