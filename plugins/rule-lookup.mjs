@@ -16,16 +16,17 @@ export const setup = (api) => ({
     const max = Math.max(200, Math.min(4000, Number(args && args.chars) || 1200))
     const found = await api.call('rules.search', { query: q, limit: limit })
     if (!found || found.ok === false) return { ok: false, error: (found && found.error) || '检索失败' }
-    const hits = found.hits || found.sections || found.results || []
+    const hits = found.items || found.hits || found.sections || found.results || []
     if (!hits.length) return { ok: true, query: q, count: 0, items: [], summary: '没有命中：' + q }
     const items = []
     for (const h of hits.slice(0, limit)) {
       const id = h.id || h.ref || h.key
       let text = h.snippet || h.text || ''
-      if (id && api.call) {
+      if (id) {
         try {
           const full = await api.call('rules.read', { id: id })
-          if (full && full.ok !== false && (full.text || full.content)) text = String(full.text || full.content)
+          const ent = full && (full.entry || full)
+          if (ent && (ent.text || ent.content)) text = String(ent.text || ent.content)
         } catch (e) { }
       }
       items.push({ id: id, title: h.title || h.name || id, book: h.book || '', text: text.slice(0, max) })
