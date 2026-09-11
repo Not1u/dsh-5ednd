@@ -697,8 +697,8 @@ function ManualEdit(props) {
   const [msg, setMsg] = React.useState('')
   React.useEffect(() => { setHpCur(String(s.hp.cur)); setHpMax(String(s.hp.max)); setHpTemp(String(s.hp.temp || 0)); setXp(String(s.xp || 0)); setAc(String(s.ac)) }, [s.id, s.level, s.hp.cur, s.hp.max, s.ac, s.xp])
   const field = (label, val, setVal, k) => h('div', { key: k, className: 'dndp-field', style: { marginBottom: 6 } }, h('label', null, label), h('input', { className: 'dndp-input', value: val, onChange: e => setVal(e.target.value) }))
-  const save = async () => {
-    setBusy(true); setMsg('')
+  const save = async (opts) => {
+    if (!opts || !opts.silent) { setBusy(true); setMsg('') }
     try {
       const r = await call('sheet.patch', { json: JSON.stringify({ id: s.id, patch: { hpCur: hpCur, hpMax: hpMax, hpTemp: hpTemp, xp: xp, ac: ac } }) })
       if (r && r.ok) { setMsg(r.summary + (r.saved ? '（已保存）' : '（未保存：' + (r.saveError || '未知原因') + '）')); if (props.onReload) props.onReload() } else setMsg((r && r.error) || '保存失败')
@@ -1817,27 +1817,28 @@ function useTheme() {
 }
 function SettingsPanel(props) {
   const [st, setSt] = React.useState(null)
-  const [f, setF] = React.useState({ baseUrl: '', model: '', temperature: '0.7', maxSteps: '6', extraPrompt: '' })
+  const [f, setF] = React.useState({ baseUrl: '', model: '', temperature: '0.7', maxSteps: '6', extraPrompt: '', toolset: 'core' })
   const [key, setKey] = React.useState('')
   const [msg, setMsg] = React.useState('')
   const [busy, setBusy] = React.useState(false)
   const load = () => call('settings.get', {}).then(r => {
     if (!r || !r.ok) { setMsg((r && r.error) || '读取设置失败'); return }
     setSt(r)
-    setF({ baseUrl: r.config.baseUrl || '', model: r.config.model || '', temperature: String(r.config.temperature), maxSteps: String(r.config.maxSteps), extraPrompt: r.config.extraPrompt || '' })
+    setF({ baseUrl: r.config.baseUrl || '', model: r.config.model || '', temperature: String(r.config.temperature), maxSteps: String(r.config.maxSteps), extraPrompt: r.config.extraPrompt || '', toolset: r.config.toolset || 'core' })
   }).catch(e => setMsg(String(e && e.message || e)))
   React.useEffect(() => { load() }, [])
   const save = async () => {
     setBusy(true); setMsg('')
-    const patch = { baseUrl: f.baseUrl, model: f.model, temperature: f.temperature, maxSteps: f.maxSteps, extraPrompt: f.extraPrompt }
+    const patch = { baseUrl: f.baseUrl, model: f.model, temperature: f.temperature, maxSteps: f.maxSteps, extraPrompt: f.extraPrompt, toolset: f.toolset }
     if (key) patch.apiKey = key
     const r = await call('settings.set', { patch: patch })
-    setMsg(r && r.ok ? (r.summary + (r.saved ? '' : '（未落盘：' + (r.saveError || '') + '）')) : ((r && r.error) || '保存失败'))
+    const line = r && r.ok ? (r.summary + (r.saved ? '' : '（未落盘：' + (r.saveError || '') + '）')) : ((r && r.error) || '保存失败')
     setKey('')
-    setBusy(false)
     load()
+    if (!opts || !opts.silent) { setMsg(line); setBusy(false) } else setMsg(line)
+    return r
   }
-  const test = async () => { setBusy(true); setMsg('测试中…'); const r = await call('ai.test', {}); setMsg(r && r.ok ? r.summary : ('测试失败：' + ((r && r.error) || '') + (r && r.detail ? ('\n' + r.detail) : ''))); setBusy(false) }
+  const test = async () => { setBusy(true); setMsg('保存并测试中…'); await save({ silent: true }); const r = await call('ai.test', {}); setMsg(r && r.ok ? r.summary : ('测试失败：' + ((r && r.error) || '') + (r && r.detail ? ('\n' + r.detail) : ''))); setBusy(false) }
   const clearKey = async () => { const r = await call('settings.set', { patch: { clearKey: true } }); setMsg(r && r.ok ? '密钥已清除' : '清除失败'); load() }
   const th = normThemeLocal(props.theme || DEFAULT_THEME)
   const pickTheme = async (patch) => {
@@ -1871,10 +1872,13 @@ function SettingsPanel(props) {
     h('div', { key: 'two', style: { display: 'flex', gap: 8 } },
       h('div', { style: { flex: 1 } }, row('温度', null, h('input', { className: 'dndp-input', value: f.temperature, onChange: e => setF(Object.assign({}, f, { temperature: e.target.value })) }))),
       h('div', { style: { flex: 1 } }, row('每轮最多工具步数', null, h('input', { className: 'dndp-input', value: f.maxSteps, onChange: e => setF(Object.assign({}, f, { maxSteps: e.target.value })) })))),
+    row('工具集', 'core = 桌面跑团常用（约 35 个，省 token）；all = 全部（含全部模组/角色管理/插件）',
+      h('select', { className: 'dndp-input', value: f.toolset, onChange: e => setF(Object.assign({}, f, { toolset: e.target.value })) },
+        [['core', 'core · 常用（省 token）'], ['all', 'all · 全部能力']].map(x => h('option', { key: x[0], value: x[0] }, x[1])))),
     row('补充指令（追加到 DM 系统提示之后）', '例如：叙事更简洁，每次回复不超过 200 字；遇到战斗先确认先攻。', h('textarea', { className: 'dndp-input', rows: 4, value: f.extraPrompt, onChange: e => setF(Object.assign({}, f, { extraPrompt: e.target.value })) })),
     h('div', { key: 'btns', style: { display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 } },
-      h('button', { className: 'dndp-btn primary', disabled: busy, onClick: save }, '保存'),
-      h('button', { className: 'dndp-btn', disabled: busy, onClick: test }, '测试连接'),
+      h('button', { className: 'dndp-btn primary', disabled: busy, onClick: () => save() }, '保存'),
+      h('button', { className: 'dndp-btn', disabled: busy, onClick: test }, '保存并测试连接'),
       h('button', { className: 'dndp-btn', disabled: busy || !st.hasKey, onClick: clearKey }, '清除密钥')),
     msg ? h('div', { key: 'm', className: 'dndp-note hl', style: { marginTop: 8, whiteSpace: 'pre-wrap' } }, msg) : null,
     h('div', { key: 'tools', className: 'dndp-note', style: { marginTop: 10 } },

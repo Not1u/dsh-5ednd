@@ -1151,8 +1151,19 @@ return {
         if (!e && a.query) {
           const terms = String(a.query).trim().split(/[\s,，]+/).filter(Boolean)
           const rank = (x) => (/怪物图鉴|模组/.test(String(x.book || '')) ? 0 : 1) * 1000 + String(x.title).length * 10 + String(x.text).length
-          const cand = entries.filter(x => looksBlock(x.text) && terms.every(t => String(x.title).includes(t) || String(x.text).includes(t)))
-          e = cand.sort((p, q) => rank(p) - rank(q))[0] || null
+          const pool = entries.filter(x => looksBlock(x.text))
+          // 标题优先级：完全相同 > 以它开头 > 标题包含 > 仅正文包含（避免「地精」命中「大地精武者」/「座狼」）
+          const tt = String(a.query).trim()
+          const tier = (x) => {
+            const t = String(x.title).trim()
+            if (t === tt) return 0
+            if (t.indexOf(tt) === 0) return 1
+            if (terms.every(t2 => t.includes(t2))) return 2
+            return 3
+          }
+          const pool2 = pool.filter(x => terms.every(t => String(x.title).includes(t) || String(x.text).includes(t)))
+          const score = (x) => tier(x) * 1000000 + (/怪物图鉴/.test(String(x.book || '')) ? 0 : 50000) + String(x.title).length * 10 + String(x.text).length
+          e = pool2.sort((p, q) => score(p) - score(q))[0] || null
         }
         if (!e) return { ok: false, error: '未找到怪物条目（给 id / title / query 任一；需要条目含 AC、HP 与体型行）' }
         const sb = statblock(e)
@@ -1342,7 +1353,7 @@ return {
     const EXT = (typeof DND5E_EXT === 'object' && DND5E_EXT) ? DND5E_EXT : null
     const AI_DEFAULTS = {
       baseUrl: 'https://api.openai.com/v1', apiKey: '', model: 'gpt-4o-mini', temperature: 0.7,
-      maxSteps: 6, maxToolChars: 4000, extraPrompt: '',
+      maxSteps: 6, maxToolChars: 4000, extraPrompt: '', toolset: 'core',
     }
     const readAi = async () => {
       let j = null
@@ -1468,20 +1479,28 @@ return {
       'mod.statblock': { type: 'object', additionalProperties: false, properties: { title: { type: 'string' }, id: { type: 'string' }, query: { type: 'string' } } },
       'tools.list': { type: 'object', properties: {}, additionalProperties: false },
     }
-    const buildToolSpecs = () => {
+    // 默认只把这些能力暴露给 AI（省 token：全量 58 个工具约 9k prompt tokens/次）
+    const CORE_TOOLS = ['party.list', 'party.sheet', 'pc.apply', 'roll.dice', 'log.list', 'log.append', 'log.set',
+      'map.get', 'map.set', 'map.tiles', 'map.list', 'map.use', 'map.token.add', 'map.token.move', 'map.token.update',
+      'map.token.remove', 'map.area', 'map.los', 'map.measure', 'map.batch',
+      'combat.get', 'combat.start', 'combat.next', 'combat.economy', 'combat.conditions', 'combat.damage', 'combat.end',
+      'dice.request', 'dice.results', 'mod.search', 'mod.read', 'mod.statblock', 'rules.search', 'rules.read', 'tools.list']
+    const buildToolSpecs = (cfg) => {
+      const profile = String((cfg && cfg.toolset) || 'core')
       const cat = toolCatalog()
       const out = []
       for (const t of cat.tools) {
+        if (profile !== 'all' && CORE_TOOLS.indexOf(t.name) < 0) continue
         out.push({
           type: 'function',
           function: {
             name: t.name.replace(/[^A-Za-z0-9_]/g, '_'),
-            description: '[' + t.group + '] ' + t.desc + (Object.keys(t.args || {}).length ? ('｜示例参数：' + JSON.stringify(t.args)) : ''),
+            description: '[' + t.group + '] ' + t.desc + (TOOL_SCHEMA[t.name] ? '' : (Object.keys(t.args || {}).length ? ('｜示例参数：' + JSON.stringify(t.args)) : '')),
             parameters: TOOL_SCHEMA[t.name] || { type: 'object', additionalProperties: true, properties: {}, description: '参数示例：' + JSON.stringify(t.args || {}) },
           },
         })
       }
-      if (EXT && typeof EXT.list === 'function') {
+      if (profile === 'all' && EXT && typeof EXT.list === 'function') {
         for (const p of (EXT.list() || [])) {
           out.push({ type: 'function', function: { name: p.name.replace(/[^A-Za-z0-9_]/g, '_'), description: '[扩展插件' + (p.plugin ? '·' + p.plugin : '') + '] ' + (p.desc || '插件能力'), parameters: { type: 'object', additionalProperties: true, properties: {} } } })
         }
@@ -1552,7 +1571,7 @@ return {
         const cfg = ai.config
         return jclean({
           ok: true, path: AI_PATH,
-          config: { baseUrl: cfg.baseUrl, model: cfg.model, temperature: cfg.temperature, maxSteps: cfg.maxSteps, extraPrompt: cfg.extraPrompt || '' },
+          config: { baseUrl: cfg.baseUrl, model: cfg.model, temperature: cfg.temperature, maxSteps: cfg.maxSteps, extraPrompt: cfg.extraPrompt || '', toolset: cfg.toolset || 'core' },
           hasKey: !!aiKeyOf(cfg), keyMask: maskKey(aiKeyOf(cfg)), keyFromEnv: !!(process.env.DND5E_AI_KEY),
           messages: (ai.messages || []).length,
           presets: {
@@ -1568,6 +1587,7 @@ return {
         const ai = await readAi()
         const p = a.patch || a
         for (const k of ['baseUrl', 'model', 'extraPrompt']) if (p[k] != null) ai.config[k] = String(p[k]).trim()
+        if (p.toolset != null && (p.toolset === 'core' || p.toolset === 'all')) ai.config.toolset = p.toolset
         if (p.temperature != null && p.temperature !== '') ai.config.temperature = Math.max(0, Math.min(2, Number(p.temperature)))
         if (p.maxSteps != null && p.maxSteps !== '') ai.config.maxSteps = Math.max(1, Math.min(20, Number(p.maxSteps)))
         if (p.apiKey != null && p.apiKey !== '') ai.config.apiKey = String(p.apiKey).trim()
@@ -1605,8 +1625,13 @@ return {
     }))
     unreg.push(harness.handle('ai.tools', async () => {
       try {
-        const specs = buildToolSpecs()
-        return { ok: true, count: specs.length, tools: specs.map(s => ({ name: s.function.name, desc: s.function.description.slice(0, 120) })), summary: 'AI 可调用 ' + specs.length + ' 个能力' }
+        const ai0 = await readAi()
+        const specsAll = buildToolSpecs({ toolset: 'all' })
+        const specs = buildToolSpecs(ai0.config)
+        return { ok: true, count: specs.length, toolset: ai0.config.toolset || 'core', allCount: specsAll.length,
+          chars: JSON.stringify(specs).length,
+          tools: specs.map(s => ({ name: s.function.name, desc: s.function.description.slice(0, 120) })),
+          summary: 'AI 可调用 ' + specs.length + ' 个能力（工具集 ' + (ai0.config.toolset || 'core') + '；全量 ' + specsAll.length + ' 个）' }
       } catch (e) { return { ok: false, error: String(e && e.message || e) } }
     }))
     unreg.push(harness.handle('ai.chat', async (args) => {
@@ -1617,7 +1642,7 @@ return {
         const key = aiKeyOf(cfg)
         if (!cfg.baseUrl) return { ok: false, error: '还没配置 API 地址：打开「⚙ 设置」面板填 Base URL 与模型' }
         if (a.dryRun) {
-          const specs = buildToolSpecs()
+          const specs = buildToolSpecs(cfg)
           const status = await aiStatusLine()
           return { ok: true, dryRun: true, tools: specs.length, system: aiSystemPrompt(status, cfg.extraPrompt), status: status, summary: '干跑：' + specs.length + ' 个工具，系统提示 ' + aiSystemPrompt(status, cfg.extraPrompt).length + ' 字' }
         }
@@ -1625,7 +1650,7 @@ return {
         const status = await aiStatusLine()
         const msgs = [{ role: 'system', content: aiSystemPrompt(status, cfg.extraPrompt) }]
         for (const m of ai.messages.slice(-40)) msgs.push({ role: m.role, content: m.content })
-        const tools = buildToolSpecs()
+        const tools = buildToolSpecs(cfg)
         const steps = []
         let totalUsage = { prompt_tokens: 0, completion_tokens: 0 }
         let reply = ''

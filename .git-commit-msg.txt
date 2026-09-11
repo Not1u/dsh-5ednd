@@ -1,10 +1,7 @@
-feat(combat+dice): 先攻条/行动经济/带时状态 + 物理骰子盘与骰子请求接口
+﻿fix(ai): DeepSeek 接入修复 + 省 token 的工具集 + 怪物条目按标题分层匹配
 
-- host: combat.start（自动掷先攻，同名地图单位与角色卡自动合并）/ next（跨轮 +1、重置行动经济、带时状态递减）/
-  economy / conditions（支持 rounds）/ damage（同步地图单位与角色卡并记账）/ end；id 或名字或 tokenId 或 pcId 都能查找
-- host: dice.request（弹出玩家投掷提示）/ pending / answer（写战斗记录 + DC 成败判定）/ results / clear
-- client: 「先攻」面板（先攻条、HP 条、状态剩余回合、行动经济小标、选中操作区）
-- client: 「骰子」面板 —— canvas 物理骰盘（重力/墙面回弹/骰间碰撞/角速度翻滚，落稳揭晓），
-  玩具模式不记账不统计；AI 请求模式点一下即投并回写结果
-- tools.list 与 JSON Schema 登记 combat.* / dice.*；系统提示补充战斗流程，并明确「玩家的骰子必须走 dice.request」
-- test: smoke 增加骰池→骰式拼装断言与两个新面板渲染；修掉先攻条行类名与被选统计的角色行冲突
+- fix: 怪物条目查询改为分层排序（标题完全相同 > 以它开头 > 标题包含 > 仅正文包含），
+  并优先官方图鉴；此前 query「地精」会命中「大地精武者」「座狼」
+- feat: 工具集 core/all（默认 core = 35 个，工具清单约 4.3k tokens；全量 64 个），设置面板可选
+- feat(设置): 「测试连接」改为「保存并测试连接」（先保存表单再测，避免填了密钥没保存就测导致误判）
+- 说明：DeepSeek 用 https://api.deepseek.com/v1 + deepseek-chat 已验证可用（含工具调用）
