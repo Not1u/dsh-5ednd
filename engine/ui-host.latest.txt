@@ -1686,7 +1686,9 @@ return {
       '    combat.conditions 能加带持续回合的状态（到该单位回合会自动递减并提示结束）；combat.economy 记录动作/附赠/反应/移动。',
       '3g) 战斗结束/完成任务后记得发经验：pc.awardXp（reason 写清楚，default 每人全额，per:"split" 才平分）；',
       '    返回值里的 levelUps 表示可以升级——这时告诉玩家「你升级了」并让他在「升级」面板里做选择，不要自己替他选子职/法术。',
-      '3f) 需要玩家自己掷骰时（豁免、检定、命中），用 dice.request 弹出提示（写清 expr/label/dc），玩家点一下投完，',
+      '3f) 需要玩家自己掷骰时（豁免、检定、命中），**必须**用 dice.request 发起（expr + label 写清用途 + dc），',
+      '    玩家的骰子面板会亮起按钮，他点一下投完；你用 dice.results 读结果（最新的一条排最前）。',
+      '    注意：玩家侧的战斗判定骰只能由你发起，不要让他自己掷了再告诉你数字。',
       '    你用 dice.results 读结果（含成功/失败判定）。不要自己替玩家掷这类骰子。',
       '    建议顺序：先 map.los 确认能打（掩体会给 AC 加值），再 map.area 拿命中名单，然后让每个目标掷豁免（roll.dice）、用 pc.apply / map.batch 结算。',
       '4) 需要摆场景时用 map.set / map.token.add 把地形与单位放到地图上，玩家就能在侧栏直接看到并拖动。',
@@ -2412,6 +2414,7 @@ return {
       try {
         const a = args || {}
         if (!a.expr) return { ok: false, error: "需要 expr，例如 1d20+2" }
+        if (!a.label && !a.why) return { ok: false, error: "必须写清这次投骰的用途：label（例如「敏捷豁免（火球术）」）" }
         const d = await readDice()
         d.seq = (Number(d.seq) || 0) + 1
         const req = {
@@ -2434,7 +2437,7 @@ return {
         const req = (d.pending || []).find(r => r.id === a.id)
         if (!req) return { ok: false, error: "没有这条待投请求：" + a.id }
         d.pending = d.pending.filter(r => r.id !== a.id)
-        const entry = { id: req.id, t: nowIso(), expr: req.expr, advantage: req.advantage, label: req.label, actor: req.actor || a.actor || "",
+        const entry = { id: req.id, t: nowIso(), expr: req.expr, advantage: req.advantage, label: req.label, why: req.why || "", actor: req.actor || a.actor || "",
           dc: req.dc, dice: a.dice || [], dropped: a.dropped || [], total: (a.total == null ? null : Number(a.total)), detail: a.detail || "",
           success: (req.dc == null || a.total == null) ? null : (Number(a.total) >= Number(req.dc)), casual: false }
         d.done.push(entry)
@@ -2448,7 +2451,8 @@ return {
         const a = args || {}
         const d = await readDice()
         const limit = Math.max(1, Math.min(60, Number(a.limit) || 20))
-        const items = (d.done || []).slice(-limit).map(x => ({ id: x.id, t: x.t, expr: x.expr, label: x.label, actor: x.actor, total: x.total, dc: x.dc, success: x.success, detail: x.detail }))
+        const items = (d.done || []).slice(-limit).map(x => ({ id: x.id, t: x.t, expr: x.expr, label: x.label, why: x.why || '', actor: x.actor, total: x.total, dc: x.dc, success: x.success, detail: x.detail, advantage: x.advantage || 'normal' })).reverse()
+        // ↑ reverse：最新的一条排最前，方便一眼看到刚投的是什么
         return jclean({ ok: true, count: items.length, items: items, pending: (d.pending || []).length, summary: items.length ? items.map(x => (x.actor || "玩家") + " " + x.expr + " = " + x.total + (x.dc != null ? (" vs DC " + x.dc + (x.success ? " 成功" : " 失败")) : "")).join("；") : "还没有玩家投掷记录" })
       } catch (e) { return { ok: false, error: String(e && e.message || e) } }
     }))

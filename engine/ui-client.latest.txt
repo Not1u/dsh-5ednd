@@ -272,6 +272,18 @@ const css = `
 .dndp-mapfill .dndp-mapwrap{flex:1;min-height:0;max-height:none}
 .dndp-fill{display:flex;flex-direction:column;height:100%;min-height:0}
 .dndp-fill>.dndp-scroll{flex:1;min-height:0}
+/* 骰子面板：待投按钮发光 + 记录 */
+.dndp-dicebox{padding: 0 10px}
+.dndp-dicego{border:1px solid transparent;border-radius:10px;padding:9px 14px;font-size:14px;font-weight:700;cursor:default;width:100%;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);transition:background .18s ease,color .18s ease,box-shadow .18s ease,transform .1s ease}
+.dndp-dicego.live{background:var(--dsw-alias-brand-primary);color:var(--dndp-on-accent);cursor:pointer;animation:dndpPulse 1.4s ease-in-out infinite}
+.dndp-dicego.live:hover{transform:translateY(-1px)}
+@keyframes dndpPulse{0%,100%{box-shadow:0 0 0 0 var(--dndp-glow)}50%{box-shadow:0 0 0 8px transparent}}
+.dndp-req{border:1px solid var(--dndp-line-accent);border-radius:10px;padding:8px 10px;margin:6px 0;background:color-mix(in srgb, var(--dsw-alias-brand-primary) 8%, transparent)}
+.dndp-rec{display:flex;gap:8px;align-items:baseline;padding:5px 2px;border-bottom:1px solid var(--dndp-line-soft);font-size:12px}
+.dndp-rec .tm{color:var(--dsw-alias-label-secondary);font-size:11px;flex:none}
+.dndp-rec .lb{font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.dndp-rec .ok{color:#5ec27a;flex:none}
+.dndp-rec .no{color:#d3564b;flex:none}
 /* 经验条 */
 .dndp-xpmini{display:inline-flex;align-items:center;gap:4px;flex:none}
 .dndp-xpminibar{width:52px;height:5px;border-radius:3px;background:color-mix(in srgb, var(--dsw-alias-label-primary) 14%, transparent);overflow:hidden;display:inline-block}
@@ -2241,6 +2253,7 @@ function DicePanel(props) {
   const [res, setRes] = React.useState(null)
   const [toy, setToy] = React.useState([])
   const [pending, setPending] = React.useState([])
+  const [records, setRecords] = React.useState([])
   const [msg, setMsg] = React.useState('')
   const canvasRef = React.useRef(null)
   const bodiesRef = React.useRef([])
@@ -2248,51 +2261,45 @@ function DicePanel(props) {
   const lastRef = React.useRef(0)
 
   const loadPending = () => call('dice.pending', {}).then(r => { if (r && r.ok) setPending(r.pending || []) }).catch(() => { })
-  React.useEffect(() => { loadPending() }, [])
-  React.useEffect(() => { const t = (typeof setInterval === 'function') ? setInterval(loadPending, 3000) : null; return () => { if (t) clearInterval(t) } }, [])
+  const loadRecords = () => call('dice.results', { limit: 12 }).then(r => { if (r && r.ok) setRecords(r.items || []) }).catch(() => { })
+  React.useEffect(() => { loadPending(); loadRecords() }, [])
+  React.useEffect(() => {
+    const t = (typeof setInterval === 'function') ? setInterval(() => { loadPending(); loadRecords() }, 3000) : null
+    return () => { if (t) clearInterval(t) }
+  }, [])
 
-  const draw = () => {
+  const draw = () => { /* 与之前一致：画骰盘 */ }
+  const drawReal = () => {
     const cv = canvasRef.current
     if (!cv || typeof cv.getContext !== 'function') return
     const ctx = cv.getContext('2d')
     if (!ctx) return
     const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1
-    const W = cv.clientWidth || 320, H = cv.clientHeight || 180
+    const W = cv.clientWidth || 320, H = cv.clientHeight || 150
     if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr) }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.clearRect(0, 0, W, H)
-    const bg = (props.theme && props.theme.mode === 'light') ? '#e7ecf2' : '#20252c'
-    ctx.fillStyle = bg
+    const light = props.theme && props.theme.mode === 'light'
+    ctx.fillStyle = light ? '#e7ecf2' : '#20252c'
     ctx.fillRect(0, 0, W, H)
     ctx.strokeStyle = 'rgba(120,150,190,.35)'
     ctx.lineWidth = 2
     ctx.strokeRect(1, 1, W - 2, H - 2)
     for (const b of bodiesRef.current) {
-      ctx.save()
-      ctx.translate(b.x, b.y)
-      ctx.rotate(b.ang)
-      const n = DIE_SIDES[b.kind] || 6
+      ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.ang)
+      const sides = DIE_SIDES[b.kind] || 6
       ctx.beginPath()
-      for (let i = 0; i < n; i++) {
-        const a = -Math.PI / 2 + i * 2 * Math.PI / n
-        const px = Math.cos(a) * b.r, py = Math.sin(a) * b.r
-        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py)
-      }
+      for (let i = 0; i < sides; i++) { const a = -Math.PI / 2 + i * 2 * Math.PI / sides; const px = Math.cos(a) * b.r, py = Math.sin(a) * b.r; if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py) }
       ctx.closePath()
-      ctx.fillStyle = DIE_COLOR[b.kind] || '#666'
-      ctx.fill()
-      ctx.lineWidth = 2
-      ctx.strokeStyle = 'rgba(255,255,255,.5)'
-      ctx.stroke()
+      ctx.fillStyle = DIE_COLOR[b.kind] || '#666'; ctx.fill()
+      ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.stroke()
       ctx.restore()
       ctx.fillStyle = '#fff'
       ctx.font = 'bold ' + Math.max(10, Math.round(b.r * 1.05)) + 'px ui-monospace, Menlo, monospace'
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
       ctx.fillText(b.settled && b.value != null ? String(b.value) : '?', b.x, b.y)
     }
   }
-
   const step = (dt, W, H) => {
     const bodies = bodiesRef.current
     for (const b of bodies) {
@@ -2325,94 +2332,117 @@ function DicePanel(props) {
     }
     return bodies.every(b => b.settled)
   }
-
-  const roll = async (req) => {
-    if (busy) return
-    const expr = req ? req.expr : buildExpr(pool, mod)
-    const advantage = req ? (req.advantage || 'normal') : adv
-    setBusy(true); setMsg('')
-    const r = await call('roll.dice', { expr: expr, advantage: advantage, append: false })
-    if (!r || !r.ok) { setMsg('投掷失败：' + ((r && r.error) || '')); setBusy(false); return }
-    const vals = (r.dice || []).slice(0, 14)
+  const animate = (expr, vals, onDone) => {
     const cv = canvasRef.current
-    const W = (cv && cv.clientWidth) || 320, H = (cv && cv.clientHeight) || 180
-    const n = Math.max(1, vals.length)
-    bodiesRef.current = vals.map((v, i) => ({
-      kind: (req ? (req.expr.match(/\d*(d\d+)/) || [])[1] : (DICE_KINDS.find(k => (pool[k] || 0) > 0) || 'd20')) || 'd20',
-      x: W * (0.18 + 0.64 * (n === 1 ? 0.5 : i / (n - 1))), y: -30 - i * 8, r: n > 6 ? 12 : (n > 3 ? 15 : 20),
+    const W = (cv && cv.clientWidth) || 320, H = (cv && cv.clientHeight) || 150
+    const list = (vals || []).slice(0, 14)
+    const n2 = Math.max(1, list.length)
+    const kindGuess = ((expr || '').match(/(\d*)d(\d+)/) || [])[2]
+    bodiesRef.current = list.map((v, i) => ({
+      kind: 'd' + (kindGuess || 20),
+      x: W * (0.18 + 0.64 * (n2 === 1 ? 0.5 : i / (n2 - 1))), y: -30 - i * 8,
+      r: n2 > 6 ? 12 : (n2 > 3 ? 15 : 20),
       vx: (Math.random() * 2 - 1) * 460, vy: -180 - Math.random() * 220,
-      ang: Math.random() * 6.28, va: (Math.random() * 2 - 1) * 12, value: v, settled: false, kindIdx: i,
+      ang: Math.random() * 6.28, va: (Math.random() * 2 - 1) * 12, value: v, settled: false,
     }))
-    // 值预先定好（加密随机），物理只演翻滚；落地再揭晓
     const t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now())
-    const finish = async () => {
-      draw()
-      const detail = r.detail
-      if (req) {
-        const ans = await call('dice.answer', { id: req.id, dice: r.dice, dropped: r.dropped, total: r.total, detail: detail })
-        setMsg(ans && ans.ok ? ans.summary : ('记录失败：' + ((ans && ans.error) || '')))
-        setRes({ expr: expr, total: r.total, detail: detail, requested: true, dc: req.dc, success: (ans && ans.success) })
-        loadPending()
-      } else {
-        setRes({ expr: expr, total: r.total, detail: detail, requested: false })
-        setToy(list => [{ expr: expr, total: r.total, detail: detail, t: new Date().toLocaleTimeString() }].concat(list).slice(0, 8))
-      }
-      setBusy(false)
-    }
     const tick = (now) => {
       const dt = Math.min(0.032, (now - (lastRef.current || now)) / 1000)
       lastRef.current = now
       const all = step(dt, W, H)
-      draw()
-      if (!all && now - t0 < 5000) { rafRef.current = (typeof requestAnimationFrame === 'function') ? requestAnimationFrame(tick) : null; if (!rafRef.current) { finish(); return } }
-      else finish()
+      drawReal()
+      if (!all && now - t0 < 5000) { rafRef.current = (typeof requestAnimationFrame === 'function') ? requestAnimationFrame(tick) : null; if (!rafRef.current) onDone(); }
+      else onDone()
     }
     if (typeof requestAnimationFrame === 'function') { lastRef.current = 0; rafRef.current = requestAnimationFrame(tick) }
-    else { bodiesRef.current.forEach(b => { b.settled = true }); finish() }
+    else { bodiesRef.current.forEach(b => { b.settled = true }); onDone() }
+  }
+
+  // ① 应 DM 要求投掷（唯一会计入战斗记录的骰子）
+  const rollRequested = async (req) => {
+    if (busy || !req) return
+    setBusy(true); setMsg('')
+    const r = await call('roll.dice', { expr: req.expr, advantage: req.advantage || 'normal', append: false })
+    if (!r || !r.ok) { setMsg('投掷失败：' + ((r && r.error) || '')); setBusy(false); return }
+    animate(req.expr, r.dice, async () => {
+      const ans = await call('dice.answer', { id: req.id, dice: r.dice, dropped: r.dropped, total: r.total, detail: r.detail })
+      if (ans && ans.ok) {
+        setRes({ expr: req.expr, total: r.total, detail: r.detail, requested: true, dc: req.dc, success: ans.success, label: req.label || req.why })
+        setMsg(ans.summary)
+      } else setMsg('记录失败：' + ((ans && ans.error) || ''))
+      setBusy(false); loadPending(); loadRecords()
+    })
+  }
+  // ② 随手丢（玩具，不写记录、不计入统计）
+  const rollToy = async () => {
+    if (busy) return
+    const expr = buildExpr(pool, mod)
+    setBusy(true); setMsg('')
+    const r = await call('roll.dice', { expr: expr, advantage: adv, append: false })
+    if (!r || !r.ok) { setMsg('投掷失败：' + ((r && r.error) || '')); setBusy(false); return }
+    animate(expr, r.dice, () => {
+      setRes({ expr: expr, total: r.total, detail: r.detail, requested: false })
+      setToy(list => [{ expr: expr, total: r.total, detail: r.detail, t: new Date().toLocaleTimeString() }].concat(list).slice(0, 8))
+      setBusy(false)
+    })
   }
   React.useEffect(() => {
-    draw()
+    drawReal()
     const cv = canvasRef.current
     if (!cv || typeof ResizeObserver === 'undefined') return undefined
-    const ro = new ResizeObserver(() => draw())
+    const ro = new ResizeObserver(() => drawReal())
     ro.observe(cv)
     return () => { ro.disconnect(); if (rafRef.current && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(rafRef.current) }
   }, [])
 
-  const bump = (k, d) => setPool(p => { const v = Math.max(0, Math.min(12, (p[k] || 0) + d)); const n = Object.assign({}, p, { [k]: v }); if (!DICE_KINDS.some(x => n[x] > 0)) n.d20 = 1; return n })
+  const bump = (k, d) => setPool(p => { const v = Math.max(0, Math.min(12, (p[k] || 0) + d)); const n2 = Object.assign({}, p, { [k]: v }); if (!DICE_KINDS.some(x => n2[x] > 0)) n2.d20 = 1; return n2 })
   const total = DICE_KINDS.reduce((a, k) => a + (pool[k] || 0), 0)
-  const banner = pending.length ? h('div', { className: 'dndp-warn', style: { margin: '6px 10px' } },
-    h('div', null, '📣 DM 要求你投：', h('b', null, pending[0].label || pending[0].expr), pending[0].dc ? ('（DC ' + pending[0].dc + '）') : '', '  ', h('code', null, pending[0].expr + (pending[0].advantage !== 'normal' ? (' ' + pending[0].advantage) : ''))),
-    h('div', { className: 'dndp-chips', style: { marginTop: 5 } },
-      h('button', { className: 'dndp-btn tiny primary', disabled: busy, onClick: () => roll(pending[0]) }, '投掷（会计入战斗记录）'),
-      h('button', { className: 'dndp-btn tiny', onClick: () => call('dice.clear', { all: true }).then(loadPending) }, '忽略'),
-      pending.length > 1 ? h('span', { className: 'dndp-note' }, '还有 ' + (pending.length - 1) + ' 个待投') : null)) : null
+  const req = pending[0] || null
 
   return h('div', { className: 'dndp-fill' },
-    banner,
     h('div', { className: 'dndp-aibar' },
-      DICE_KINDS.map(k => h('span', { key: k, style: { display: 'inline-flex', alignItems: 'center', gap: 2 } },
-        h('button', { className: 'dndp-btn tiny', onClick: () => bump(k, -1), disabled: !(pool[k] > 0) }, '−'),
-        h('b', { style: { color: DIE_COLOR[k], minWidth: 22, textAlign: 'center', display: 'inline-block' } }, k + '×' + (pool[k] || 0)),
-        h('button', { className: 'dndp-btn tiny', onClick: () => bump(k, 1) }, '+'))),
-      h('span', { className: 'dndp-note' }, '调整值'),
-      h('input', { className: 'dndp-input', style: { width: 48 }, value: mod, onChange: e => setMod(e.target.value) }),
-      h('div', { className: 'dndp-advgrp' }, [['normal', '普通'], ['adv', '优势'], ['dis', '劣势']].map(x => h('button', { key: x[0], className: 'dndp-btn tiny' + (adv === x[0] ? ' primary' : ''), onClick: () => setAdv(x[0]) }, x[1]))),
-      h('button', { className: 'dndp-btn tiny primary', disabled: busy, onClick: () => roll(null) }, busy ? '翻滚中…' : ('投掷 ' + total + ' 颗'))),
-    h('div', { className: 'dndp-aibar' },
-      h('span', { className: 'dndp-chip' }, buildExpr(pool, mod)),
-      h('span', { className: 'dndp-note' }, '玩具模式：结果不写战斗记录、不计入统计，随便丢'),
+      h('span', { className: 'dndp-chip' }, req ? ('待投 ' + pending.length + ' 条') : '无待投'),
+      h('span', { className: 'dndp-note' }, '战斗判定骰由 DM 发起，玩家点投'),
       h('div', { className: 'dndp-sp' }),
-      h('button', { className: 'dndp-btn tiny', onClick: () => setPool({ d20: 1 }), }, '重置骰池'),
-      h('button', { className: 'dndp-btn tiny', onClick: () => setToy([]) }, '清空记录')),
-    h('div', { style: { padding: '0 10px' } }, h('canvas', { ref: canvasRef, style: { width: '100%', height: 170, borderRadius: 10, display: 'block' } })),
-    res ? h('div', { className: 'dndp-note hl', style: { padding: '6px 12px' } }, (res.requested ? '【应 DM 要求】' : '') + res.detail + (res.dc != null ? ('｜DC ' + res.dc + ' → ' + (res.success ? '成功' : '失败')) : '')) : null,
-    msg ? h('div', { className: 'dndp-note hl', style: { padding: '0 12px' } }, msg) : null,
-    toy.length ? h('div', { style: { padding: '4px 12px 12px' } },
-      h('div', { className: 'dndp-label' }, '随手丢的（仅供娱乐）'),
-      toy.map((x, i) => h('div', { key: i, className: 'dndp-note' }, x.t + '　' + x.expr + ' = ' + x.total))) : null)
+      h('button', { className: 'dndp-btn tiny', onClick: () => { loadPending(); loadRecords() } }, '刷新')),
+    h('div', { className: 'dndp-dicebox' },
+      // DM 发起的投骰：有请求时按钮亮起
+      req ? h('div', { key: 'req', className: 'dndp-req' },
+        h('div', null, '📣 DM 要求你投：', h('b', null, req.label || req.why || '（未注明用途）'), req.dc != null ? ('（DC ' + req.dc + '）') : ''),
+        h('div', { className: 'dndp-note', style: { marginTop: 2 } }, h('code', null, req.expr + (req.advantage && req.advantage !== 'normal' ? (' ' + req.advantage) : '')) + (req.why && req.label ? ('　' + req.why) : '')),
+        h('div', { style: { marginTop: 6 } },
+          h('button', { className: 'dndp-dicego live', disabled: busy, onClick: () => rollRequested(req) }, busy ? '翻滚中…' : ('🎲 投掷 ' + req.expr + '（会计入战斗记录）')),
+          h('div', { style: { marginTop: 4 } }, h('button', { className: 'dndp-btn tiny', onClick: () => call('dice.clear', { all: true }).then(() => { loadPending(); loadRecords() }) }, '忽略这条要求')))) : null,
+      h('div', { key: 'go', style: { marginTop: 8 } },
+        h('button', { className: 'dndp-dicego' + (req ? ' live' : ''), disabled: busy || !req, onClick: () => rollRequested(req) }, req ? ('🎲 投掷 ' + req.expr) : '等待 DM 发起投骰要求…')),
+      pending.length > 1 ? h('div', { key: 'more', className: 'dndp-note' }, '还有 ' + (pending.length - 1) + ' 条待投（投完当前这条会自动轮到下一条）') : null,
+      res ? h('div', { key: 'res', className: 'dndp-note hl', style: { marginTop: 6 } }, (res.requested ? '【战斗判定】' : '') + (res.label ? (res.label + '：') : '') + res.detail + (res.dc != null ? ('｜DC ' + res.dc + ' → ' + (res.success ? '成功' : '失败')) : '')) : null,
+      msg ? h('div', { key: 'm', className: 'dndp-note hl' }, msg) : null,
+      h('canvas', { key: 'cv', ref: canvasRef, style: { width: '100%', height: 130, borderRadius: 10, display: 'block', marginTop: 8 } }),
+      // 记录：最新在最上
+      h('div', { key: 'rec', style: { marginTop: 8 } },
+        h('div', { className: 'dndp-label' }, '战斗判定记录（最新在上）'),
+        records.length ? records.map(r2 => h('div', { key: r2.id, className: 'dndp-rec' },
+          h('span', { className: 'tm' }, r2.t ? new Date(r2.t).toLocaleTimeString() : ''),
+          h('span', { className: 'lb' }, (r2.actor ? (r2.actor + ' · ') : '') + (r2.label || r2.why || '未注明用途')),
+          h('code', { className: 'dndp-logd' }, r2.detail || (r2.expr + ' = ' + r2.total)),
+          r2.dc != null ? h('span', { className: r2.success ? 'ok' : 'no' }, 'DC ' + r2.dc + (r2.success ? ' ✔' : ' ✘')) : null)) : h('div', { className: 'dndp-note' }, '还没有战斗判定记录')),
+      // 玩具
+      h('div', { key: 'toy', style: { marginTop: 10, borderTop: '1px solid var(--dndp-line-soft)', paddingTop: 8 } },
+        h('div', { className: 'dndp-label' }, '随手丢（玩具：不写记录、不计入统计）'),
+        h('div', { className: 'dndp-chips', style: { marginBottom: 6 } },
+          DICE_KINDS.map(k => h('span', { key: k, style: { display: 'inline-flex', alignItems: 'center', gap: 2 } },
+            h('button', { className: 'dndp-btn tiny', onClick: () => bump(k, -1), disabled: !(pool[k] > 0) }, '−'),
+            h('b', { style: { color: DIE_COLOR[k], minWidth: 22, textAlign: 'center', display: 'inline-block' } }, k + '×' + (pool[k] || 0)),
+            h('button', { className: 'dndp-btn tiny', onClick: () => bump(k, 1) }, '+')))),
+        h('div', { className: 'dndp-chips' },
+          h('span', { className: 'dndp-note' }, '调整值'),
+          h('input', { className: 'dndp-input', style: { width: 46 }, value: mod, onChange: e => setMod(e.target.value) }),
+          h('div', { className: 'dndp-advgrp' }, [['normal', '普通'], ['adv', '优势'], ['dis', '劣势']].map(x => h('button', { key: x[0], className: 'dndp-btn tiny' + (adv === x[0] ? ' primary' : ''), onClick: () => setAdv(x[0]) }, x[1]))),
+          h('button', { className: 'dndp-btn tiny', disabled: busy, onClick: rollToy }, '丢 ' + total + ' 颗 ' + buildExpr(pool, mod)),
+          h('button', { className: 'dndp-btn tiny', onClick: () => { setPool({ d20: 1 }); setToy([]) } }, '重置')),
+        toy.length ? toy.map((x, i) => h('div', { key: i, className: 'dndp-note' }, x.t + '　' + x.expr + ' = ' + x.total)) : null)))
 }
-
 function PartyView() {
   const [theme] = useTheme()
   const [mode, setMode] = React.useState('list')

@@ -80,6 +80,10 @@ const WS = {
 }
 
 const CANNED = {
+  'dice.results': { ok: true, count: 2, pending: 1, items: [
+    { id: 'r3', t: '2026-09-11T11:00:00.000Z', expr: '1d20+2', label: '敏捷豁免（火球术）', actor: '图里尔', total: 15, dc: 13, success: true, detail: '1d20+2 → [13] +2 = 15' },
+    { id: 'r2', t: '2026-09-11T10:59:00.000Z', expr: '1d20+5', label: '火焰箭命中', actor: '图里尔', total: 9, dc: 15, success: false, detail: '1d20+5 → [4] +5 = 9' },
+  ] },
   'ws.get': WS, 'party.list': PARTY, 'party.sheet': { ok: true, sheet: SHEET }, 'map.get': MAP, 'log.list': LOG,
   'rules.stats': { ok: true, total: 6803, books: [{ book: '玩家手册', entries: 166 }] },
   'rules.search': { ok: true, items: [{ id: 'r1', title: '战斗', book: '玩家手册', snippet: '…' }] },
@@ -101,7 +105,7 @@ const CANNED = {
   'dice.pending': { ok: true, count: 1, pending: [{ id: 'r3', expr: '1d20+2', advantage: 'normal', label: '敏捷豁免（火球术）', dc: 13, kind: 'roll' }], done: [] },
   'roll.dice': { ok: true, total: 15, detail: '1d20+2 → [13] +2 = 15', dice: [13], dropped: [] },
   'dice.answer': { ok: true, id: 'r3', total: 15, success: true, detail: '1d20+2 → [13] +2 = 15', summary: '已记录' },
-  'dice.results': { ok: true, count: 0, items: [], pending: 1 },
+
   'theme.get': { ok: true, theme: { name: 'emerald', mode: 'light', accent: '#4fbf8b' }, presets: { emerald: { name: 'emerald', label: '翡翠', accent: '#4fbf8b' } } },
   'settings.get': { ok: true, path: 'data/ai.json', config: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', temperature: 0.7, maxSteps: 6, extraPrompt: '' }, hasKey: true, keyMask: 'sk-••••abcd', presets: { openai: 'https://api.openai.com/v1', ollama: 'http://127.0.0.1:11434/v1' } },
   'build.options': { ok: true, races: [], classes: [], backgrounds: [], weapons: [], armor: [], packs: [] },
@@ -300,9 +304,16 @@ async function deepWorkspace() {
   await new Promise((r) => setTimeout(r, 30))          // 等 call() 的 promise 落地
   try { out = invoke(Workspace, {}) } catch (e) { deep.ok = false; deep.detail.push('第二遍渲染异常：' + (e && e.message || e)); return }
   const before = problems.length
+  // 嵌套面板（先攻/骰子/角色卡等）是在 walk 时才真正被调用的，它们的 effect 也在那时才跑，
+  // 所以要走两遍：第一遍触发加载 → 等异步落地 → 第二遍才带上数据。
   seen.clear()
   collector = []
   try { walk(out, 0) } catch (e) { deep.ok = false; deep.detail.push('遍历异常：' + (e && e.message || e)); return }
+  collector = null
+  await new Promise((r) => setTimeout(r, 30))
+  seen.clear()
+  collector = []
+  try { walk(out, 0) } catch (e) { deep.ok = false; deep.detail.push('第二遍遍历异常：' + (e && e.message || e)); return }
   const seenCls = collector
   collector = null
   if (problems.length > before) { deep.ok = false; deep.detail.push('渲染期报错 ' + (problems.length - before) + ' 条'); return }
@@ -315,11 +326,13 @@ async function deepWorkspace() {
   const panels = seenCls.filter((c) => c.indexOf('dndp-panel') === 0 && c.indexOf('dndp-panelslot') !== 0).length
   const titles = has('dndp-ptitle')
   const splitters = starts('dndp-ws-split')
-  const roster = has('dndp-ritem')
+  const roster = seenCls.filter((c) => c.indexOf('dndp-ritem') === 0).length
   const aiMsgs = has('dndp-bubble')
   const xpBars = starts('dndp-xpmini')
   const featCards = has('dndp-cardwrap')
   const warnBoxes = has('dndp-warn')
+  const recRows = has('dndp-rec')
+  const liveBtns = has('dndp-dicego') + starts('dndp-dicego ')
   const upMarks = has('dndp-xpup')
 
   deep.detail.push('地图格 ' + cells + '（期望 ' + (W * H) + '）')
@@ -328,7 +341,7 @@ async function deepWorkspace() {
   deep.detail.push('面板 ' + panels + ' 个，标题栏 ' + titles + ' 个，分隔条 ' + splitters + ' 条')
   deep.detail.push('角色列表项 ' + roster + '（期望 1）')
   deep.detail.push('AI 对话气泡 ' + aiMsgs + '（期望 2）')
-  deep.detail.push('经验条 ' + xpBars + ' 条；特性卡片 ' + featCards + ' 张；提示块 ' + warnBoxes + ' 个')
+  deep.detail.push('经验条 ' + xpBars + ' 条；特性卡片 ' + featCards + ' 张；判定记录 ' + recRows + ' 行；骰子按钮 ' + liveBtns + ' 个')
 
   const bad = []
   if (cells !== W * H) bad.push('地图格子数不符')
@@ -338,6 +351,8 @@ async function deepWorkspace() {
   if (aiMsgs !== 2) bad.push('AI 面板历史消息未渲染')
   if (xpBars < 1) bad.push('经验条未渲染（角色行或升级面板）')
   if (featCards < 3) bad.push('特性/祈愿卡片未渲染（期望 >= 3）')
+  if (recRows !== 2) bad.push('战斗判定记录应为 2 行（最新在上），实际 ' + recRows)
+  if (liveBtns < 1) bad.push('骰子投掷按钮未渲染')
   if (splitters < 3) bad.push('分隔条数量不足')
   if (!bad.length) notes.push('深度渲染：地图 ' + cells + ' 格 / ' + toks + ' 单位，记录 ' + rows + ' 行，AI 气泡 ' + aiMsgs + ' 个，面板 ' + panels + ' 个，分隔条 ' + splitters + ' 条')
   else { deep.ok = false; bad.forEach((b) => deep.detail.push('✘ ' + b)) }
