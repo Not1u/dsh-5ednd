@@ -1,4 +1,4 @@
-// v18 client — 战术地图（5尺格 / 地形 / 可拖动单位 / 测距 / 速度范围）+ 战斗记录 + 骰子
+// v19 client — 战术地图（5尺格 / 地形 / 可拖动单位 / 测距 / 速度范围）+ 战斗记录 + 骰子
 const h = React.createElement
 // —— 统一传输层：优先走同源 HTTP 桥（profile 常驻插件 /dnd5e/api，可直接落盘），
 //    不可用时回退动态插件的 host.call。
@@ -159,6 +159,40 @@ const css = `
 .dndp-overlay{position:fixed;inset:0;z-index:2147483000;background:rgba(0,0,0,.72);display:flex;flex-direction:column}
 .dndp-overlay .dndp-ovhead{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--dsw-alias-bg-layer-2);border-bottom:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-primary);font-weight:600}
 .dndp-overlay .dndp-ovbody{flex:1;overflow:auto;padding:12px;background:var(--dsw-alias-bg-base)}
+/* ===== 工作区（IDE 式多面板）===== */
+.dndp-ws{display:flex;flex-direction:column;height:100%;min-height:0;box-sizing:border-box;color:var(--dsw-alias-label-primary);font-size:13px;background:var(--dsw-alias-bg-base)}
+.dndp-ws-top{flex:none;display:flex;align-items:center;gap:9px;padding:6px 10px;border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);flex-wrap:wrap}
+.dndp-ws-top .logo{font-weight:700}
+.dndp-ws-main{flex:1;display:flex;min-height:0}
+.dndp-ws-col{display:flex;flex-direction:column;min-width:0;min-height:0}
+.dndp-ws-row{display:flex;flex-direction:row;min-width:0;min-height:0}
+.dndp-ws-split{flex:none;background:var(--dsw-alias-border-l1);position:relative;z-index:6}
+.dndp-ws-split.v{width:5px;cursor:col-resize}
+.dndp-ws-split.h{height:5px;cursor:row-resize}
+.dndp-ws-split:hover,.dndp-ws-split.on{background:var(--dsw-alias-brand-primary)}
+.dndp-ws-inner{display:flex;flex-direction:column;min-height:0;min-width:0}
+.dndp-ws-inner.h{flex-direction:row}
+.dndp-panel{display:flex;flex-direction:column;min-height:0;min-width:0;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);overflow:hidden}
+.dndp-panel.max{border-color:var(--dsw-alias-brand-primary)}
+.dndp-ptitle{flex:none;display:flex;align-items:center;gap:6px;padding:4px 8px;background:var(--dsw-alias-bg-layer-2);border-bottom:1px solid var(--dsw-alias-border-l1);font-size:12px;font-weight:600;cursor:default;user-select:none}
+.dndp-ptitle .sp{flex:1}
+.dndp-pbtn{border:1px solid transparent;background:transparent;color:var(--dsw-alias-label-secondary);border-radius:5px;padding:0 6px;font-size:12px;cursor:pointer;line-height:18px}
+.dndp-pbtn:hover{background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-border-l2)}
+.dndp-pmenu{position:absolute;z-index:99998;background:var(--dsw-alias-bg-overlay);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:5px;box-shadow:0 8px 24px rgba(0,0,0,.45);min-width:150px}
+.dndp-pmenu button{display:block;width:100%;text-align:left;background:transparent;border:0;color:var(--dsw-alias-label-primary);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer}
+.dndp-pmenu button:hover{background:var(--dsw-alias-bg-layer-2)}
+.dndp-pmenu .sep{height:1px;background:var(--dsw-alias-border-l1);margin:4px 2px}
+.dndp-pmenu .hd{font-size:11px;color:var(--dsw-alias-label-secondary);padding:3px 8px}
+.dndp-pbody{flex:1;min-height:0;overflow:auto;position:relative}
+.dndp-panel.col .dndp-pbody{display:none}
+.dndp-roster{display:flex;flex-direction:column;gap:2px;padding:6px}
+.dndp-ritem{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;border:1px solid transparent}
+.dndp-ritem:hover{background:var(--dsw-alias-bg-layer-2)}
+.dndp-ritem.on{border-color:var(--dsw-alias-brand-primary);background:var(--dsw-alias-bg-layer-2)}
+.dndp-mapfill{display:flex;flex-direction:column;height:100%;min-height:0}
+.dndp-mapfill .dndp-mapwrap{flex:1;min-height:0;max-height:none}
+.dndp-fill{display:flex;flex-direction:column;height:100%;min-height:0}
+.dndp-fill>.dndp-scroll{flex:1;min-height:0}
 `
 const AB = ['str', 'dex', 'con', 'int', 'wis', 'cha']
 const ABF = { str: '力量', dex: '敏捷', con: '体质', int: '智力', wis: '感知', cha: '魅力' }
@@ -595,7 +629,7 @@ function ManualEdit(props) {
   }
   children.push(h('div', { key: 'eq', style: { marginTop: 10 } }, h(EquipPanel, { s: s, onReload: props.onReload })))
   children.push(h('div', { key: 'bag', style: { marginTop: 10 } }, h(Bag, { s: s, onReload: props.onReload })))
-  children.push(h('div', { key: 'rules', style: { marginTop: 10 } }, h(RulesPanel, null)))
+  if (!props.noRules) children.push(h('div', { key: 'rules', style: { marginTop: 10 } }, h(RulesPanel, null)))
   return h('div', { className: 'dndp-detail' }, h('div', { key: 't', className: 'dndp-title' }, s.name), h('div', { key: 'sub', className: 'dndp-subtitle' }, 'Lv' + s.level + '  ·  ' + s.race + '  ·  ' + (s.classes || []).join(' / ')), children)
 }
 function Wizard(props) {
@@ -870,6 +904,7 @@ function LogView(props) {
   if (!all.length) body.push(h('div', { key: 'z', className: 'dndp-empty' }, '还没有记录。用上面的骰子投一次，或让 DM 写入战斗记录。'))
   entries.slice(-200).forEach((e, i) => body.push(h(LogRow, { key: e.id || i, e: e })))
   if (all.length > 200) body.push(h('div', { key: 'more', className: 'dndp-note' }, '仅显示最近 200 条（共 ' + all.length + ' 条）'))
+  if (props.bare) return h('div', { className: 'dndp-fill' }, msg ? h('div', { key: 'm', className: 'dndp-note hl', style: { padding: '4px 12px' } }, msg) : null, h('div', { className: 'dndp-scroll' }, body))
   return h('div', { className: 'dndp-root' }, h('div', { className: 'dndp-header' }, head), h('div', { className: 'dndp-scroll' }, body))
 }
 const TERRAIN = {
@@ -906,12 +941,30 @@ function MapPanel(props) {
   const [meas, setMeas] = React.useState({ a: null, b: null })
   const [drag, setDrag] = React.useState(null)
   const gridRef = React.useRef(null)
+  const fitRef = React.useRef(null)
+  const [fit, setFit] = React.useState(!!props.bare)
   const load = () => call('map.get', {}).then(r => { if (r && r.ok) { setMap(r); setErr('') } else setErr((r && r.error) || '读取地图失败') }).catch(e => setErr(String(e && e.message || e)))
   React.useEffect(() => { load() }, [])
   React.useEffect(() => {
     const t = (typeof setInterval === 'function') ? setInterval(() => { if (!drag) load() }, 4000) : null
     return () => { if (t) clearInterval(t) }
   }, [drag])
+  // 自适应：把格子缩放到刚好填满面板（工作区里地图面板变大变小都跟着重算）
+  React.useEffect(() => {
+    if (!fit || !map || typeof window === 'undefined') return undefined
+    const el = fitRef.current
+    if (!el) return undefined
+    const apply = () => {
+      const w = el.clientWidth - 10, hh = el.clientHeight - 10
+      if (w <= 0 || hh <= 0) return
+      setTile(Math.max(10, Math.min(72, Math.floor(Math.min(w / map.w, hh / map.h)))))
+    }
+    apply()
+    let ro = null
+    if (typeof ResizeObserver !== 'undefined') { try { ro = new ResizeObserver(apply); ro.observe(el) } catch (e) { ro = null } }
+    if (!ro) window.addEventListener('resize', apply)
+    return () => { if (ro) ro.disconnect(); else window.removeEventListener('resize', apply) }
+  }, [fit, !!map, map ? map.w : 0, map ? map.h : 0])
   const cellFromEvent = (ev) => {
     const el = gridRef.current
     if (!el) return null
@@ -1002,18 +1055,342 @@ function MapPanel(props) {
     h('button', { className: 'dndp-btn tiny' + (tool === 'move' ? ' primary' : ''), onClick: () => setTool('move') }, '移动'),
     h('button', { className: 'dndp-btn tiny' + (tool === 'measure' ? ' primary' : ''), onClick: () => { setTool('measure'); setMeas({ a: null, b: null }) } }, '测距'),
     h('button', { className: 'dndp-btn tiny', onClick: () => { setMeas({ a: null, b: null }); setSel(null); setMsg('') } }, '清除选点'),
+    h('button', { className: 'dndp-btn tiny' + (fit ? ' primary' : ''), onClick: () => setFit(!fit), title: '格子自动缩放到填满面板' }, '自适应'),
     h('span', { className: 'dndp-note' }, '格距'),
-    h('input', { type: 'range', min: 16, max: 60, value: tile, onChange: e => setTile(Number(e.target.value)), style: { width: 92 } }),
+    h('input', { type: 'range', min: 12, max: 72, value: tile, onChange: e => { setFit(false); setTile(Number(e.target.value)) }, style: { width: 92 } }),
     h('span', { className: 'dndp-note' }, tile + 'px'),
     h('button', { className: 'dndp-btn tiny', onClick: load }, '刷新'),
     h('button', { className: 'dndp-btn tiny', onClick: async () => { setMsg('导出中…'); const r = await call('ext.image.map', {}); setMsg(r && r.ok ? r.summary : ('导出失败：' + ((r && r.error) || '需要重启 DSH 以加载 plugins/')) ) } }, '⬇ 导出图片'),
     props.onToggleFull ? h('button', { className: 'dndp-btn tiny', onClick: props.onToggleFull }, props.full ? '退出全屏' : '⤢ 全屏') : null)
   const legend = h('div', { className: 'dndp-legend' }, h('span', null, '图例：'), (map.legend || Object.keys(TERRAIN).map(k => [k, TERRAIN[k].n])).map((L, i) => h('span', { key: i }, h('span', { className: 'sw g-' + ((TERRAIN[L[0]] || {}).k || 'void') }), L[1])))
+  if (props.bare) {
+    return h('div', { className: 'dndp-mapfill' },
+      tools,
+      h('div', { style: { flex: 1, minHeight: 0, padding: '0 10px 6px', display: 'flex' } }, h('div', { ref: fitRef, className: 'dndp-mapwrap', style: { flex: 1, minHeight: 0 } }, grid)),
+      msg ? h('div', { className: 'dndp-note hl', style: { padding: '0 12px 6px' } }, msg) : null,
+      err ? h('div', { className: 'dndp-err' }, err) : null,
+      legend)
+  }
   const body = [tools, h('div', { key: 'm', style: { padding: '0 10px 10px' } }, h('div', { className: 'dndp-mapwrap', style: { maxHeight: props.full ? 'none' : 420 } }, grid)), msg ? h('div', { key: 'g', className: 'dndp-note hl', style: { padding: '0 12px' } }, msg) : null, err ? h('div', { key: 'e', className: 'dndp-err' }, err) : null, legend,
     h('div', { key: 't', className: 'dndp-note', style: { padding: '0 12px 12px' } }, '用法：拖动图标移动单位（自动按 5 尺格换算距离并写入战斗记录）；点「测距」后点两格看距离；选中单位会显示其速度范围（蓝色水波纹区）。')]
   if (props.full) return h('div', { className: 'dndp-overlay' }, h('div', { className: 'dndp-ovhead' }, h('span', { className: 'dndp-ic' }, '🗺'), h('span', null, '战术地图 — ' + (map.name || '未命名')), h('div', { className: 'dndp-sp' }), h('button', { className: 'dndp-btn', onClick: props.onToggleFull }, '关闭（Esc）')), h('div', { className: 'dndp-ovbody' }, body))
   return h('div', { className: 'dndp-root' }, h('div', { className: 'dndp-header' }, h('span', { className: 'dndp-ic' }, '🗺'), h('span', null, '战术地图'), h('div', { className: 'dndp-sp' }), h('button', { className: 'dndp-btn', onClick: props.onBack }, '返回')), h('div', { className: 'dndp-scroll' }, body))
 }
+// ============ 工作区（IDE 式多面板）============
+const WS_SLOTS = [['left', '左栏'], ['center', '中栏'], ['right', '右栏'], ['bottom', '底栏']]
+const DEFAULT_LAYOUT = {
+  version: 1,
+  slots: {
+    left: { size: 240, panels: ['roster'] },
+    center: { size: 0, panels: ['map', 'sheet'] },
+    right: { size: 380, panels: ['log'] },
+    bottom: { size: 0, panels: [] },
+  },
+  weights: { left: [1], center: [3, 2], right: [1], bottom: [] },
+  collapsed: [], maximized: null, activeSheet: null,
+}
+const PANEL_DEFS = {
+  roster: { title: '角色', icon: '👥' },
+  sheet: { title: '角色卡', icon: '📋' },
+  map: { title: '战术地图', icon: '🗺' },
+  log: { title: '战斗记录', icon: '🎲' },
+  rules: { title: '规则速查', icon: '📖' },
+  builder: { title: '新建角色', icon: '➕' },
+  stats: { title: '战况统计', icon: '📊' },
+}
+const cloneLayout = (l) => JSON.parse(JSON.stringify(l || DEFAULT_LAYOUT))
+function normLayout(l) {
+  const out = cloneLayout(l && l.slots ? l : DEFAULT_LAYOUT)
+  out.slots = out.slots || {}
+  out.weights = out.weights || {}
+  for (const [k] of WS_SLOTS) {
+    if (!out.slots[k]) out.slots[k] = { size: k === 'left' ? 240 : (k === 'right' ? 380 : 0), panels: [] }
+    if (!Array.isArray(out.slots[k].panels)) out.slots[k].panels = []
+    out.slots[k].panels = out.slots[k].panels.filter(p => PANEL_DEFS[p])
+    if (!Array.isArray(out.weights[k]) || out.weights[k].length !== out.slots[k].panels.length) out.weights[k] = out.slots[k].panels.map(() => 1)
+  }
+  out.collapsed = Array.isArray(out.collapsed) ? out.collapsed : []
+  return out
+}
+const inLayout = (l, id) => WS_SLOTS.some(([k]) => l.slots[k].panels.indexOf(id) >= 0)
+function slotOf(l, id) { for (const [k] of WS_SLOTS) if (l.slots[k].panels.indexOf(id) >= 0) return k; return null }
+
+function Roster(props) {
+  const [list, setList] = React.useState(null)
+  const [err, setErr] = React.useState('')
+  const cur = props.activeId
+  const load = () => call('party.list', {}).then(r => { if (r && r.ok) { setList(r.items); setErr('') } else setErr((r && r.error) || '读取失败') }).catch(e => setErr(String(e && e.message || e)))
+  React.useEffect(() => { load() }, [props.rev])
+  React.useEffect(() => {
+    const t = (typeof setInterval === 'function') ? setInterval(load, 6000) : null
+    return () => { if (t) clearInterval(t) }
+  }, [])
+  const rows = []
+  if (err) rows.push(h('div', { key: 'e', className: 'dndp-err' }, err))
+  if (!list) rows.push(h('div', { key: 'l', className: 'dndp-empty' }, '加载中…'))
+  ;(list || []).forEach(p => rows.push(
+    h('div', { key: p.id, className: 'dndp-ritem' + (p.id === cur ? ' on' : ''), onClick: () => props.onPick(p.id) },
+      h('div', { className: 'dndp-ava' }, (p.name || '?').slice(0, 1)),
+      h('div', { className: 'dndp-main' },
+        h('div', { className: 'dndp-name' }, p.name),
+        h('div', { className: 'dndp-sub' }, (p.race || '') + (p.cls ? ' · ' + p.cls : ''))),
+      h('div', { style: { textAlign: 'right' } },
+        h('div', { className: 'dndp-chip', style: { display: 'block' } }, 'L' + p.level),
+        h('div', { className: 'dndp-sub' }, 'HP ' + p.hp + '/' + p.max)))))
+  rows.push(h('div', { key: 'add', style: { padding: '8px 2px' } },
+    h('button', { className: 'dndp-btn', style: { width: '100%' }, onClick: () => props.onOpen('builder') }, '+ 新建角色')))
+  return h('div', { className: 'dndp-roster' }, rows)
+}
+
+function SheetHost(props) {
+  const [sheet, setSheet] = React.useState(null)
+  const [err, setErr] = React.useState('')
+  const id = props.activeId
+  const load = () => {
+    if (!id) { setSheet(null); return }
+    call('party.sheet', { id }).then(r => { if (r && r.ok) { setSheet(r.sheet); setErr('') } else setErr((r && r.error) || '读取角色卡失败') }).catch(e => setErr(String(e && e.message || e)))
+  }
+  React.useEffect(() => { load() }, [id, props.rev])
+  if (!id) return h('div', { className: 'dndp-empty' }, '在左侧「角色」面板里点一个角色')
+  if (err) return h('div', { className: 'dndp-err' }, err)
+  if (!sheet) return h('div', { className: 'dndp-empty' }, '加载中…')
+  return h('div', { style: { padding: '10px 12px' } }, h(Boundary, null, h(Detail, { s: sheet, noRules: true, onReload: () => { load(); if (props.onReload) props.onReload() } })))
+}
+
+function StatsPanel() {
+  const [rows, setRows] = React.useState(null)
+  const [err, setErr] = React.useState('')
+  const load = () => call('ext.encounter.stats', {}).then(r => { if (r && r.ok) { setRows(r.rows || []); setErr('') } else setErr((r && r.error) || '统计失败（需要 plugins/ 已加载）') }).catch(e => setErr(String(e && e.message || e)))
+  React.useEffect(() => { load() }, [])
+  if (err) return h('div', { className: 'dndp-err' }, err)
+  if (!rows) return h('div', { className: 'dndp-empty' }, '统计中…')
+  if (!rows.length) return h('div', { className: 'dndp-empty' }, '战斗记录里还没有攻防数据')
+  return h('div', { style: { padding: '8px 12px' } },
+    h('div', { className: 'dndp-note' }, '来源：战斗记录（本场累计）'),
+    rows.map((r, i) => h('div', { key: i, className: 'dndp-item' },
+      h('div', { className: 'dndp-main' },
+        h('div', { className: 'dndp-name' }, r.actor),
+        h('div', { className: 'dndp-sub' }, '攻击 ' + r.attacks + '｜命中 ' + r.hits + '（' + r.hitRate + '）｜重击 ' + r.crits + '｜伤害 ' + r.damage + '｜治疗 ' + r.healed + '｜移动 ' + r.feet + ' 尺')))))
+}
+
+function PanelFrame(props) {
+  const [menu, setMenu] = React.useState(false)
+  const def = PANEL_DEFS[props.id] || { title: props.id, icon: '▫' }
+  const isCol = props.collapsed
+  const head = h('div', { className: 'dndp-ptitle' },
+    h('span', null, def.icon), h('span', null, def.title), h('div', { className: 'sp' }),
+    h('button', { className: 'dndp-pbtn', title: props.collapsed ? '展开' : '折叠', onClick: () => props.onCollapse() }, props.collapsed ? '▸' : '▾'),
+    h('button', { className: 'dndp-pbtn', title: props.isMax ? '还原' : '最大化', onClick: () => props.onMax() }, props.isMax ? '❐' : '⤢'),
+    h('button', { className: 'dndp-pbtn', title: '移动 / 关闭', onClick: () => setMenu(!menu) }, '⋯'))
+  const items = [
+    h('div', { key: 'h1', className: 'hd' }, '移到槽位'),
+    ...WS_SLOTS.map(([k, n]) => h('button', { key: k, onClick: () => { props.onMove(k); setMenu(false) } }, n + (slotOf(props.layout, props.id) === k ? '（当前）' : ''))),
+    h('div', { key: 's', className: 'sep' }),
+    h('button', { key: 'add', onClick: () => { props.onAddTo(props.id); setMenu(false) } }, '复制到另一槽位'),
+    h('button', { key: 'rm', onClick: () => { props.onClose(props.id); setMenu(false) } }, '从工作区移除'),
+  ]
+  return h('div', { className: 'dndp-panel' + (isCol ? ' col' : '') + (props.isMax ? ' max' : ''), style: props.style },
+    head,
+    menu ? h('div', { className: 'dndp-pmenu', style: { top: 26, right: 8 } }, items) : null,
+    h('div', { className: 'dndp-pbody' }, isCol ? null : props.children))
+}
+
+function Workspace() {
+  const [layout, setLayout] = React.useState(null)
+  const [activeId, setActiveId] = React.useState(null)
+  const [party, setParty] = React.useState([])
+  const [rev, setRev] = React.useState(0)
+  const [menu, setMenu] = React.useState(false)
+  const [msg, setMsg] = React.useState('')
+  const rootRef = React.useRef(null)
+  const dragRef = React.useRef(null)
+  const saveTimer = React.useRef(null)
+
+  React.useEffect(() => {
+    call('ws.get', {}).then(r => {
+      const l = normLayout(r && r.ok ? r.layout : DEFAULT_LAYOUT)
+      setLayout(l)
+      setActiveId(l.activeSheet || null)
+    }).catch(() => setLayout(normLayout(DEFAULT_LAYOUT)))
+  }, [])
+  React.useEffect(() => {
+    call('party.list', {}).then(r => { if (r && r.ok) setParty(r.items || []) }).catch(() => { })
+  }, [rev])
+
+  const commit = (next, opts) => {
+    setLayout(next)
+    if (opts && opts.noSave) return
+    if (typeof setInterval !== 'function') return
+    if (saveTimer.current) clearInterval(saveTimer.current)
+    saveTimer.current = setInterval(() => {
+      clearInterval(saveTimer.current); saveTimer.current = null
+      call('ws.set', { layout: next }).then(r => { if (r && r.ok && r.saved === false) setMsg(r.summary || '布局未落盘') }).catch(() => { })
+    }, 400)
+  }
+  const pick = (id) => { setActiveId(id); const n = cloneLayout(layout); n.activeSheet = id; commit(n) }
+  const openPanel = (pid) => {
+    const n = cloneLayout(layout)
+    if (inLayout(n, pid)) { for (const [k] of WS_SLOTS) if (n.slots[k].panels.indexOf(pid) >= 0) n.collapsed = n.collapsed.filter(x => x !== pid); commit(n); return }
+    const slot = pid === 'map' ? 'center' : (pid === 'builder' || pid === 'rules' || pid === 'stats' ? 'right' : 'left')
+    n.slots[slot].panels.push(pid)
+    n.weights[slot] = n.slots[slot].panels.map(() => 1)
+    commit(n)
+  }
+  const closePanel = (pid) => {
+    const n = cloneLayout(layout)
+    for (const [k] of WS_SLOTS) {
+      const i = n.slots[k].panels.indexOf(pid)
+      if (i >= 0) { n.slots[k].panels.splice(i, 1); n.weights[k].splice(i, 1) }
+    }
+    if (n.maximized === pid) n.maximized = null
+    commit(n)
+  }
+  const movePanel = (pid, slot) => {
+    const n = cloneLayout(layout)
+    for (const [k] of WS_SLOTS) { const i = n.slots[k].panels.indexOf(pid); if (i >= 0) { n.slots[k].panels.splice(i, 1); n.weights[k].splice(i, 1) } }
+    n.slots[slot].panels.push(pid)
+    n.weights[slot] = n.slots[slot].panels.map(() => 1)
+    if (n.collapsed.indexOf(pid) >= 0) n.collapsed = n.collapsed.filter(x => x !== pid)
+    commit(n)
+  }
+  const addTo = (pid) => {
+    const cur = slotOf(layout, pid)
+    const order = WS_SLOTS.map(([k]) => k)
+    const next = order[(order.indexOf(cur) + 1) % order.length]
+    const n = cloneLayout(layout)
+    n.slots[next].panels.push(pid)
+    n.weights[next] = n.slots[next].panels.map(() => 1)
+    commit(n)
+    setMsg('已复制到「' + (WS_SLOTS.find(s => s[0] === next) || [])[1] + '」（同一面板可以同时出现在多个槽位）')
+  }
+  const toggleCollapse = (pid) => {
+    const n = cloneLayout(layout)
+    n.collapsed = n.collapsed.indexOf(pid) >= 0 ? n.collapsed.filter(x => x !== pid) : n.collapsed.concat([pid])
+    commit(n)
+  }
+  const toggleMax = (pid) => { const n = cloneLayout(layout); n.maximized = n.maximized === pid ? null : pid; commit(n) }
+  const reset = () => { call('ws.reset', {}).then(r => { setLayout(normLayout(r && r.ok ? r.layout : DEFAULT_LAYOUT)); setMsg('布局已重置') }).catch(() => setMsg('重置失败')) }
+
+  // 拖拽分隔条
+  const startDrag = (kind, slot, index) => (ev) => {
+    ev.preventDefault()
+    const root = rootRef.current
+    if (!root) return
+    const rect = root.getBoundingClientRect()
+    dragRef.current = { kind, slot, index, rect, x: ev.clientX, y: ev.clientY, base: cloneLayout(layout) }
+    const onMove = (e) => {
+      const d = dragRef.current
+      if (!d) return
+      const n = cloneLayout(d.base)
+      const dx = e.clientX - d.x, dy = e.clientY - d.y
+      if (d.kind === 'col') {
+        if (d.slot === 'left') n.slots.left.size = Math.max(150, Math.min(d.rect.width - 320, d.base.slots.left.size + dx))
+        else if (d.slot === 'right') n.slots.right.size = Math.max(200, Math.min(d.rect.width - 320, d.base.slots.right.size - dx))
+      } else if (d.kind === 'bottom') {
+        n.slots.bottom.size = Math.max(0, Math.min(d.rect.height - 200, d.base.slots.bottom.size - dy))
+      } else if (d.kind === 'panel') {
+        const slot = d.slot, idx = d.index
+        const panels = n.slots[slot].panels
+        if (panels.length < 2) return
+        const w = (n.weights[slot] || []).slice()
+        const delta = (d.slot === 'bottom' ? dx : dy) / Math.max(60, (d.slot === 'bottom' ? d.rect.width : d.rect.height)) * 6
+        const a = Math.max(0.4, (d.base.weights[slot][idx] || 1) + delta)
+        const b = Math.max(0.4, (d.base.weights[slot][idx + 1] || 1) - delta)
+        w[idx] = a; w[idx + 1] = b
+        n.weights[slot] = w
+      }
+      setLayout(n)
+    }
+    const onUp = () => {
+      const cur = dragRef.current
+      dragRef.current = null
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      if (cur) {
+        setLayout(prev => { if (prev) call('ws.set', { layout: prev }).catch(() => { }); return prev })
+      }
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
+
+  if (!layout) return h('div', { className: 'dndp-root' }, h('div', { className: 'dndp-header' }, h('span', { className: 'dndp-ic' }, '⚔'), h('span', null, '工作区'), h('div', { className: 'dndp-sp' }), h('span', { className: 'dndp-chip' }, '加载布局…')))
+
+  const panelProps = { layout, activeId, rev, onOpen: openPanel }
+  const renderPanel = (pid, slot, index, total) => {
+    const collapsed = layout.collapsed.indexOf(pid) >= 0
+    const body = (() => {
+      if (collapsed) return null
+      if (pid === 'roster') return h(Roster, { activeId: activeId, onPick: pick, onOpen: openPanel, rev: rev })
+      if (pid === 'sheet') return h(SheetHost, { activeId: activeId, rev: rev, onReload: () => setRev(r => r + 1) })
+      if (pid === 'map') return h(MapPanel, { bare: true })
+      if (pid === 'log') return h(LogView, { bare: true, party: party, onBack: null })
+      if (pid === 'rules') return h('div', { style: { padding: '10px 12px' } }, h(RulesPanel, {}))
+      if (pid === 'stats') return h(StatsPanel, {})
+      if (pid === 'builder') return h(Wizard, { onDone: () => { setRev(r => r + 1); closePanel('builder') }, onBack: () => closePanel('builder') })
+      return null
+    })()
+    const weight = (layout.weights[slot] || [])[index] || 1
+    const style = collapsed ? { flex: 'none' } : { flex: weight + ' 1 0', minHeight: 0, minWidth: 0 }
+    return h('div', { key: slot + '-' + pid + '-' + index, style: { display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, ...style } },
+      h(PanelFrame, {
+        id: pid, layout: layout, collapsed: collapsed, isMax: layout.maximized === pid, style: { flex: 1, minHeight: 0 },
+        onCollapse: () => toggleCollapse(pid), onMax: () => toggleMax(pid), onClose: closePanel, onMove: (s) => movePanel(pid, s), onAddTo: addTo,
+      }, body),
+      index < total - 1 ? h('div', { className: 'dndp-ws-split ' + (slot === 'bottom' ? 'v' : 'h'), onPointerDown: startDrag('panel', slot, index) }) : null)
+  }
+
+  const col = (slotName) => {
+    const s = layout.slots[slotName]
+    const panels = s.panels
+    const dir = slotName === 'bottom' ? 'row' : 'col'
+    return h('div', { className: 'dndp-ws-inner ' + (dir === 'row' ? 'h' : ''), style: { flex: 1, minHeight: 0, minWidth: 0 } },
+      panels.length ? panels.map((pid, i) => renderPanel(pid, slotName, i, panels.length)) : h('div', { className: 'dndp-empty', style: { flex: 1 } }, '（空）点右上「面板」把模块放进来'))
+  }
+
+  if (layout.maximized && inLayout(layout, layout.maximized)) {
+    const pid = layout.maximized
+    return h('div', { className: 'dndp-ws', ref: rootRef },
+      h('div', { className: 'dndp-ws-top' }, h('span', { className: 'logo' }, '⚔ SoloTRPG'), h('span', { className: 'dndp-chip' }, PANEL_DEFS[pid].title + ' · 最大化'), h('div', { className: 'dndp-sp' }),
+        h('button', { className: 'dndp-btn tiny', onClick: () => toggleMax(pid) }, '还原布局')),
+      h('div', { className: 'dndp-ws-main' }, h('div', { style: { flex: 1, display: 'flex', minHeight: 0, padding: 6 } }, renderPanel(pid, slotOf(layout, pid) || 'center', 0, 1))))
+  }
+
+  const bottomH = layout.slots.bottom.panels.length ? Math.max(80, layout.slots.bottom.size) : 0
+  const mainRow = h('div', { className: 'dndp-ws-row', style: { flex: 1, minHeight: 0 } },
+    layout.slots.left.panels.length ? h('div', { className: 'dndp-ws-col', style: { width: layout.slots.left.size, flex: 'none', padding: 4 } }, col('left')) : null,
+    layout.slots.left.panels.length && (layout.slots.center.panels.length || layout.slots.right.panels.length) ? h('div', { className: 'dndp-ws-split v', onPointerDown: startDrag('col', 'left') }) : null,
+    h('div', { className: 'dndp-ws-col', style: { flex: 1, minWidth: 0, padding: 4 } }, col('center')),
+    layout.slots.right.panels.length ? h('div', { className: 'dndp-ws-split v', onPointerDown: startDrag('col', 'right') }) : null,
+    layout.slots.right.panels.length ? h('div', { className: 'dndp-ws-col', style: { width: layout.slots.right.size, flex: 'none', padding: 4 } }, col('right')) : null)
+
+  const allPanels = Object.keys(PANEL_DEFS)
+  const menuItems = [
+    h('div', { key: 'h', className: 'hd' }, '显示面板'),
+    ...allPanels.map(pid => h('button', { key: pid, onClick: () => { openPanel(pid); setMenu(false) } }, (PANEL_DEFS[pid].icon || '') + ' ' + PANEL_DEFS[pid].title + (inLayout(layout, pid) ? '（已在布局中）' : ''))),
+    h('div', { key: 's', className: 'sep' }),
+    h('button', { key: 'r', onClick: () => { reset(); setMenu(false) } }, '重置为默认布局'),
+  ]
+
+  return h('div', { className: 'dndp-ws', ref: rootRef },
+    h('div', { className: 'dndp-ws-top' },
+      h('span', { className: 'logo' }, '⚔ SoloTRPG'),
+      h('span', { className: 'dndp-chip' }, '工作区'),
+      activeId ? h('span', { className: 'dndp-chip' }, '当前角色：' + (activeId || '')) : null,
+      h('div', { className: 'dndp-sp' }),
+      msg ? h('span', { className: 'dndp-note hl' }, msg) : null,
+      h('button', { className: 'dndp-btn tiny', onClick: () => setRev(r => r + 1) }, '刷新数据'),
+      h('div', { style: { position: 'relative' } },
+        h('button', { className: 'dndp-btn tiny', onClick: () => setMenu(!menu) }, '面板 ▾'),
+        menu ? h('div', { className: 'dndp-pmenu', style: { right: 0, top: 26 } }, menuItems) : null),
+      h('button', { className: 'dndp-btn tiny', onClick: reset }, '重置布局')),
+    h('div', { className: 'dndp-ws-main' },
+      h('div', { style: { flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 } },
+        mainRow,
+        bottomH ? h('div', { className: 'dndp-ws-split h', onPointerDown: startDrag('bottom', 'bottom') }) : null,
+        bottomH ? h('div', { className: 'dndp-ws-col', style: { height: bottomH, flex: 'none', padding: 4 } }, col('bottom')) : null)))
+}
+
 function PartyView() {
   const [mode, setMode] = React.useState('list')
   const [list, setList] = React.useState(null)
@@ -1049,7 +1426,12 @@ return {
       const clean = styles.insert(css)
       const bsb = ctx.get('betterSidebar')
       let d = null
-      if (bsb && typeof bsb.registerTab === 'function') d = bsb.registerTab({ id: 'dnd5e:party', title: 'D&D 角色', single: true, component: () => h(PartyView, null) })
+      if (bsb && typeof bsb.registerTab === 'function') {
+        d = bsb.registerTab({ id: 'dnd5e:workspace', title: '跑团工作区', single: true, component: () => h(Workspace, null) })
+        const d2 = bsb.registerTab({ id: 'dnd5e:party', title: '角色速览', single: true, component: () => h(PartyView, null) })
+        const d1 = d
+        d = () => { if (typeof d1 === 'function') d1(); if (typeof d2 === 'function') d2() }
+      }
       return () => { if (typeof clean === 'function') clean(); if (typeof d === 'function') d(); tipHide() }
     })
     return () => { if (typeof off === 'function') off() }

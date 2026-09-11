@@ -1183,6 +1183,55 @@ return {
       tools.forEach(t => { groups[t.group] = (groups[t.group] || 0) + 1 })
       return jclean({ ok: true, version: 'v18', count: tools.length, groups: groups, tools: tools, plugins: 'plugins/*.mjs 会被自动挂到同一座桥上，用 ext.list 枚举' })
     }))
+    // ===== 工作区布局（IDE 式多面板：尺寸、折叠、槽位、最大化）=====
+    const WS_PATH = ROOT + '/data/workspace.json'
+    const DEFAULT_WS = {
+      version: 1,
+      slots: {
+        left: { size: 240, panels: ['roster'] },
+        center: { size: 0, panels: ['map', 'sheet'] },
+        right: { size: 380, panels: ['log'] },
+        bottom: { size: 0, panels: [] },
+      },
+      weights: { left: [1], center: [3, 2], right: [1], bottom: [] },
+      collapsed: [], maximized: null, activeSheet: null,
+    }
+    unreg.push(harness.handle('ws.get', async () => {
+      try {
+        const j = JSON.parse(await fsRead(WS_PATH))
+        if (j && j.slots) return { ok: true, layout: j, path: WS_PATH }
+      } catch (e) { }
+      return { ok: true, layout: DEFAULT_WS, path: WS_PATH, isDefault: true }
+    }))
+    unreg.push(harness.handle('ws.set', async (args) => {
+      try {
+        const a = args || {}
+        const layout = a.layout || (a.json ? JSON.parse(a.json) : null)
+        if (!layout || !layout.slots) return { ok: false, error: '需要 layout 或 json（含 slots）' }
+        const txt = JSON.stringify(layout, null, 2)
+        let saved = false, saveError = ''
+        if (typeof DND5E_WRITE === 'function') {
+          try { const r = await DND5E_WRITE(WS_PATH, txt); saved = !!(r && r.ok); saveError = (r && r.error) || '' } catch (e) { saveError = String(e && e.message || e) }
+        }
+        if (!saved) {
+          try {
+            const fs = ctx.get('fs')
+            const t = await fs.resolve(WS_PATH)
+            if (fs && typeof fs.writeText === 'function') { await fs.writeText(t, txt); saved = true }
+          } catch (e) { saveError = saveError || String(e && e.message || e) }
+        }
+        return { ok: true, saved: saved, saveError: saveError, bytes: txt.length, summary: (saved ? '布局已保存' : '布局未落盘（' + (saveError || '无写通道') + '）') }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('ws.reset', async () => {
+      try {
+        const txt = JSON.stringify(DEFAULT_WS, null, 2)
+        let saved = false
+        if (typeof DND5E_WRITE === 'function') { try { const r = await DND5E_WRITE(WS_PATH, txt); saved = !!(r && r.ok) } catch (e) { } }
+        if (!saved) { try { const fs = ctx.get('fs'); const t = await fs.resolve(WS_PATH); if (fs && typeof fs.writeText === 'function') { await fs.writeText(t, txt); saved = true } } catch (e) { } }
+        return { ok: true, layout: DEFAULT_WS, saved: saved, summary: '布局已重置为默认' }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
     return () => { unreg.forEach(f => f()) }
   }
 }

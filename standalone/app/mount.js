@@ -60,8 +60,13 @@
     // 首次：把容器画出来；之后交给 React 自己管理
   }
 
+  function preferredId() {
+    const ws = tabs.find((t) => /workspace/.test(t.id))
+    return (ws || tabs[0] || {}).id || null
+  }
+
   function App() {
-    const [cur, setCur] = React.useState(tabs.length ? tabs[0].id : null)
+    const [cur, setCur] = React.useState(preferredId())
     activeId = cur
     const tab = tabs.find((t) => t.id === cur) || tabs[0]
     return h('div', { className: 'solo-shell' },
@@ -72,7 +77,7 @@
         h('div', { className: 'solo-tabs' }, tabs.map((t) => h('button', {
           key: t.id, className: 'solo-tab' + (tab && t.id === tab.id ? ' on' : ''), onClick: () => setCur(t.id),
         }, t.title))),
-        h('span', { className: 'dim' }, 'http://127.0.0.1:4620')),
+        h('span', { className: 'dim' }, 'http://127.0.0.1:' + (location.port || '4620'))),
       h('div', { className: 'solo-body' }, tab ? tab.component() : null))
   }
 

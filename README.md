@@ -91,6 +91,7 @@ node tools/test-equip.mjs
 数据（规则书索引 6803 条、模组 624 条、角色卡、地图、战斗记录）**始终留在磁盘**，
 被调用时才按需取用，因此可以把整套资料挂在 AI 旁边而不占用上下文。
 
+- **工作区**：IDE 式多面板（地图 / 角色卡 / 战斗记录 / 规则速查 / 战况统计），可拖动分隔条调大小、折叠、最大化、四槽位自由摆放，布局存 data/workspace.json（op：ws.get / ws.set / ws.reset）。
 - 发现能力：`{op:"tools.list"}`（核心 op，按角色/骰子/战斗记录/地图/规则书/模组/元 分组）、`{op:"ext.list"}`（插件与扩展 op）。
 - 模组：`mod.list` / `mod.search` / `mod.read` / **`mod.statblock`**（把图鉴条目解析成 AC/HP/速度/六维/CR/动作的结构化数值）。
 - 角色：`party.list` / `party.sheet` / **`pc.apply`**（一次改完 HP、XP、状态、物品、货币，并可写入战斗记录）/ `levelset.*` / `multiclass.add` / `sheet.*`。
