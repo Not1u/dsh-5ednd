@@ -17,5 +17,6 @@ engine/_src-*.html
 # 运行时数据：战斗记录 / 战术地图（每场战役都会变，不入库）
 data/combat-log.json
 data/map.json
+data/workspace.json
 data/images/
 _probe-*.mjs
