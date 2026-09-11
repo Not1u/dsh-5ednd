@@ -20,13 +20,27 @@ D&D 5e 跑团套件 —— 面向各类 Harness（DSH Desktop / MCP / CLI）的�
 ```
 core/           零依赖核心：规则检索、配置解析、能力探测
 adapters/       各 Harness 适配层（DSH 动态插件 / 持久插件 / MCP / CLI）
+standalone/     独立运行器外壳（server.mjs + app/ 页面 + 打包脚本）→ 同步到 E:\SoloTRPG
+plugins/        扩展插件（遭遇战统计 / 规则速查 / 地图导出 SVG + 外置图像模型）
 rules/          规则数据：职业、种族、背景、武器护甲、法术(0-9环)、子职业、专长、特性
 characters/     角色档案（demo 模板：矮人战士 / 矮人牧师 / 高等精灵法师）
 schema/         数据 Schema（character.v1）
-tools/          索引器、检索 CLI、迁移脚本、离线测试
-engine/         开发用源码快照（host / client）与校验脚本
-data/rules-index/  ← 规则书索引（本地生成，不入库，见下）
+tools/          索引器、检索 CLI、迁移脚本、离线测试、UI 冒烟、地图生成
+engine/         引擎源码（host / client）—— DSH 插件与独立运行器共用同一份，支持热重载
+data/rules-index/  规则书索引（按项目决定内置，见下）
 ```
+
+## 打包成独立程序（SoloTRPG.exe）
+
+`standalone/` 是"产品形态"的来源；同步并构建：
+
+```bash
+node standalone/tools/sync-from-repo.mjs --from .      # 外壳 + 引擎 + 数据 → E:\SoloTRPG
+cd E:\SoloTRPG
+npm run build:exe                                      # Node SEA 打包单文件 exe（内含 Node 运行时）
+```
+
+细节见 `standalone/README.md`：单文件 exe、5 尺格战术地图、战斗记录、插件热重载都在那里说明。
 
 ## 快速开始
 
