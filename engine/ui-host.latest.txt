@@ -595,7 +595,11 @@ return {
         if (clsList.some(c => c.class === key)) return { ok: false, error: '已拥有该职业' }
         const total = clsList.reduce((a, c) => a + (Number(c.level) || 0), 0)
         if (total + 1 > 20) return { ok: false, error: '总等级不能超过 20' }
-        for (const c of clsList.concat([{ class: key }])) { const a = PRIMARY[c.class]; if (a && modOf(Number(pc.abilities[a])) < 3) return { ok: false, error: '兼职需 ' + ABF[a] + ' ≥ 13（当前不满足）' } }
+        // 5e 兼职前置：新职业主属性 ≥ 13，且**所有已有职业**主属性也 ≥ 13（是属性值，不是修正）
+        const need = []
+        for (const c of clsList.concat([{ class: key }])) { const a = PRIMARY[c.class]; if (a && !need.some(x => x.ab === a)) need.push({ ab: a, cls: c.class }) }
+        const bad = need.filter(x => Number((pc.abilities || {})[x.ab]) < 13)
+        if (bad.length) return { ok: false, error: '兼职前置不满足：' + bad.map(x => ABF[x.ab] + ' 需 ≥ 13（当前 ' + (Number(pc.abilities[x.ab]) || 0) + '）').join('、') }
         const cd = srd.classes[key]
         const conMod = modOf(Number(pc.abilities.con))
         const hpGain = (Number(cd.levelUpHitDieAverage) || 5) + conMod
@@ -604,10 +608,19 @@ return {
         pc.level = total + 1
         pc.hp.max = Number(pc.hp.max) + hpGain
         pc.hp.current = Number(pc.hp.current) + hpGain
+        // 补上新职业的 1 级特性
+        pc.features = pc.features || { race: [], class: [], background: [] }
+        pc.features.class = pc.features.class || []
+        for (const f of (cd.level1Features || [])) { const k = f[0]; if (pc.features.class.indexOf(k) < 0) pc.features.class.push(k) }
         if (cd.casting) pc.spellcasting = pc.spellcasting || { ability: cd.casting.ability, cantrips: [], spells: [] }
         pc.meta.updatedAt = nowIso()
         const r1 = await persist(pc)
-        return { ok: true, id: pc.id, cls: key, level: pc.level, hpGain, saved: !!r1.ok, saveError: r1.error || '', summary: '兼职：新增 ' + cd.name + ' Lv1（总等级 ' + pc.level + '，HP +' + hpGain + '）', character: JSON.stringify(pc) }
+        // 若有其他施法职业，提醒法术位需按多职业规则另算（这里不自动合并）
+        const casters = clsList.filter(c => (srd.classes[c.class] || {}).casting).length
+        const note = casters > 1 ? '｜注意：你有 ' + casters + ' 个施法职业，法术位需按多职业规则合并（当前未自动合并）' : ''
+        return { ok: true, id: pc.id, cls: key, clsName: cd.name, level: pc.level, hpGain: hpGain, features: (cd.level1Features || []).map(f => f[0]),
+          need: need.map(x => ABF[x.ab] + '≥13'), pb: srd.core.proficiencyBonusByLevel[Math.min(19, pc.level - 1)],
+          saved: !!r1.ok, saveError: r1.error || '', summary: '兼职：新增 ' + cd.name + ' Lv1（总等级 ' + pc.level + '，HP +' + hpGain + '，熟练 +' + srd.core.proficiencyBonusByLevel[Math.min(19, pc.level - 1)] + '）' + note, character: JSON.stringify(pc) }
       } catch (e) { return { ok: false, error: String(e && e.message || e) } }
     }))
     // ===== 战斗记录 + 骰子（侧栏与 AI DM 共用同一份 data/combat-log.json）=====

@@ -148,8 +148,8 @@ function captureScope(code) {
   const marker = 'return {\n  apply(ctx) {'
   if (!code.includes(marker)) return code
   const names = ['Card', 'Pips', 'XpWidget', 'Sect', 'ChoiceBox', 'LevelSet', 'ManualEdit', 'StatusPanel', 'EquipPanel',
-    'Bag', 'RulesPanel', 'Multiclass', 'Wizard', 'Detail', 'MapPanel', 'LogView', 'LogRow', 'DiceBar', 'PartyView',
-    'Workspace', 'Roster', 'SheetHost', 'StatsPanel', 'PanelFrame', 'AIPanel', 'SettingsPanel', 'CombatPanel', 'DicePanel', 'LevelPanel', 'XpMini', 'buildExpr', 'onAccentOf', 'normThemeLocal', 'themeClassOf', 'themeStyleOf', 'THEME_LIST', 'cellVariation', 'PANEL_DEFS', 'DEFAULT_LAYOUT', 'normLayout',
+    'Bag', 'RulesPanel', 'Wizard', 'Detail', 'MapPanel', 'LogView', 'LogRow', 'DiceBar', 'PartyView',
+    'Workspace', 'Roster', 'SheetHost', 'StatsPanel', 'PanelFrame', 'AIPanel', 'SettingsPanel', 'CombatPanel', 'DicePanel', 'LevelUpBox', 'MulticlassBox', 'mcPrereqInfo', 'MCLS_ABILITY', 'XpMini', 'buildExpr', 'onAccentOf', 'normThemeLocal', 'themeClassOf', 'themeStyleOf', 'THEME_LIST', 'cellVariation', 'PANEL_DEFS', 'DEFAULT_LAYOUT', 'normLayout',
     'slotOf', 'inLayout', 'cellDist', 'cloneLayout', 'reorderPanels', 'TERRAIN', 'WS_SLOTS']
   return code.replace(marker, 'globalThis.__UI_SCOPE__ = { ' + names.join(', ') + ' }\n' + marker)
 }
@@ -249,7 +249,8 @@ tryRender('ManualEdit', { s: SHEET })
 tryRender('StatusPanel', { s: SHEET })
 tryRender('EquipPanel', { s: SHEET })
 tryRender('Bag', { s: SHEET })
-tryRender('Multiclass', { s: SHEET })
+tryRender('LevelUpBox', { s: SHEET })
+tryRender('MulticlassBox', { s: SHEET })
 tryRender('RulesPanel', {})
 tryRender('Detail', { s: SHEET })
 tryRender('MapPanel', { bare: true })
@@ -262,7 +263,6 @@ tryRender('Wizard', {})
 tryRender('PartyView', {})
 tryRender('Workspace', {})
 tryRender('CombatPanel', { conditionCatalog: [{ key: 'prone', name: '倒地' }] })
-tryRender('LevelPanel', { activeId: 'pc-test' })
 tryRender('XpMini', { item: { xp: 900, next: 2700, pct: 33, canLevel: false } })
 tryRender('XpMini', { item: { xp: 400, next: 300, pct: 100, canLevel: true, targetLevel: 2 } })
 tryRender('DicePanel', { theme: { name: 'azure', mode: 'dark', accent: '#5aa0ff' } })
@@ -397,6 +397,20 @@ function pureChecks() {
     if (be({}, 0) !== '1d20') problems.push('空骰池应回退 d20：' + be({}, 0))
     if (be({ d20: 1 }, -2) !== '1d20-2') problems.push('负调整值拼装不对：' + be({ d20: 1 }, -2))
     notes.push('骰池拼装：' + t1 + ' / ' + be({}, 0) + ' / ' + be({ d20: 1 }, -2))
+  }
+  // 兼职前置判定（纯函数）
+  const mc = scope.mcPrereqInfo
+  if (typeof mc === 'function') {
+    const mods = { str: 3, dex: 1, con: 3, int: 0, wis: 1, cha: -1 }
+    const base = { clsKeys: ['fighter'], mods: mods }
+    const a1 = mc(base, 'rogue', ['fighter'])   // 敏捷 +1 → 满足
+    if (!a1.ok) problems.push('敏捷13（+1）兼职游荡者应该允许：' + JSON.stringify(a1.bad))
+    const a2 = mc(base, 'wizard', ['fighter'])  // 智力 +0 → 不满足
+    if (a2.ok) problems.push('智力10 兼职法师应该被拒')
+    const a3 = mc({ clsKeys: ['fighter'], mods: { str: 0, dex: 2, con: 2, int: 2, wis: 0, cha: 0 } }, 'rogue', ['fighter'])
+    if (a3.ok) problems.push('已有职业主属性不足（力量+0）时应被拒')
+    if (a2.text.indexOf('智力') < 0) problems.push('前置说明缺少属性名：' + a2.text)
+    notes.push('兼职前置：敏捷+1 可兼游荡者 / 智力+0 拒绝 / 已有本职不达标也拒绝')
   }
   const rp = scope.reorderPanels
   if (typeof rp === 'function') {
