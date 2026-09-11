@@ -20,3 +20,5 @@ data/map.json
 data/workspace.json
 data/images/
 _probe-*.mjs
+_*.cjs
+_*.txt

@@ -1,9 +1,0 @@
-﻿feat(level): 「按经验升级」与「手动调整等级」彻底分开；修正内存缓存遮蔽外部改档
-
-- client: LevelSet 支持 manual 模式 ——
-  · 升级（按经验）：目标锁定 Lv+1，进面板自动算好要做的选择；经验不足时明确提示还差多少并禁用升级
-  · 手动调整等级（DM 覆写）：独立折叠块（含 DM 覆写标记与警告），可任意设 1~20 级，并可「同时把经验设为该等级门槛」
-- host: levelset.apply 支持 setXp（把经验设为该等级门槛）；levelset.info 返回 xp/xpNext/canLevel/xpShort
-- fix: 角色读改写全部改走 readPc —— 内存缓存若发现磁盘 mtime 更新会自动失效重读（外部/AI 直接改档后界面即时跟随）；
-  新增 pc.forget 手动丢缓存；顺带修掉 readPc 把 "x.json" 又拼一次 .json 的 bug（曾导致 party.list 返回空）
-- test: 冒烟新增 ManualLevelBox / LevelSet(manual) 渲染覆盖
