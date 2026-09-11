@@ -4,7 +4,7 @@
   "name": "图里尔·雾纱",
   "player": "示例玩家二",
   "level": 1,
-  "xp": 0,
+  "xp": 67,
   "alignment": "中立善良",
   "race": "elf/high",
   "classes": [
@@ -132,7 +132,7 @@
     "schemaVersion": "dnd5e.character.v1",
     "campaign": null,
     "createdAt": "2025-01-02T00:00:00Z",
-    "updatedAt": "2026-09-10T15:08:02.247Z"
+    "updatedAt": "2026-09-10T15:30:07.920Z"
   },
   "equipment": {
     "armor": null,

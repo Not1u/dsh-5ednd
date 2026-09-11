@@ -1,4 +1,4 @@
-console.log('DND-UI host starting (v16)')
+console.log('DND-UI host starting (v17)')
 const ROOT = (typeof DND5E_ROOT === 'string' && DND5E_ROOT.length) ? DND5E_ROOT.replace(/[\\/]+$/, '') : 'E:/HarnessTarvern/dnd5e'
 const CHAR_DIR = ROOT + '/characters'
 const RULES_PATH = ROOT + '/rules/dnd5e-srd.json'
@@ -601,6 +601,152 @@ return {
         pc.meta.updatedAt = nowIso()
         const r1 = await persist(pc)
         return { ok: true, id: pc.id, cls: key, level: pc.level, hpGain, saved: !!r1.ok, saveError: r1.error || '', summary: '兼职：新增 ' + cd.name + ' Lv1（总等级 ' + pc.level + '，HP +' + hpGain + '）', character: JSON.stringify(pc) }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    // ===== 战斗记录 + 骰子（侧栏与 AI DM 共用同一份 data/combat-log.json）=====
+    const LOG_PATH = ROOT + '/data/combat-log.json'
+    const readLog = async () => {
+      try {
+        const j = JSON.parse(await fsRead(LOG_PATH))
+        if (j && Array.isArray(j.entries)) return { campaign: j.campaign || '', round: Number(j.round) || 0, seq: Number(j.seq) || j.entries.length, entries: j.entries }
+      } catch (e) { }
+      return { campaign: '', round: 0, seq: 0, entries: [] }
+    }
+    const writeLog = async (log) => {
+      const txt = JSON.stringify(log, null, 2)
+      if (typeof DND5E_WRITE === 'function') {
+        try {
+          const r = await DND5E_WRITE(LOG_PATH, txt)
+          if (r && r.ok) return { ok: true }
+          if (r && r.error) return { ok: false, error: String(r.error) }
+        } catch (e) { }
+      }
+      try {
+        const fs = ctx.get('fs')
+        const t = await fs.resolve(LOG_PATH)
+        if (fs && typeof fs.writeText === 'function') { await fs.writeText(t, txt); return { ok: true } }
+      } catch (e) { }
+      return { ok: false, error: '写入 data/combat-log.json 失败（无可用写通道）' }
+    }
+    const randInt = (n) => {
+      const c = (typeof globalThis !== 'undefined' && globalThis.crypto) ? globalThis.crypto : null
+      if (c && typeof c.getRandomValues === 'function') {
+        const a = new Uint32Array(1)
+        const lim = Math.floor(4294967296 / n) * n
+        let v = 0
+        do { c.getRandomValues(a); v = a[0] } while (v >= lim)
+        return (v % n) + 1
+      }
+      return Math.floor(Math.random() * n) + 1
+    }
+    const rollExpr = (expr, advantage) => {
+      const raw = String(expr == null ? '1d20' : expr).replace(/\s+/g, '').toLowerCase()
+      if (!raw) return { ok: false, error: '骰式为空' }
+      if (!/^[0-9d+\-khl]+$/.test(raw)) return { ok: false, error: '不支持的骰式：' + expr }
+      const parts = raw.match(/[+-]?[^+-]+/g) || []
+      const kept = [], dropped = []
+      let flat = 0, diceCount = 0
+      for (const part of parts) {
+        const sign = part.charAt(0) === '-' ? -1 : 1
+        const body = part.replace(/^[+-]/, '')
+        const m = /^(\d*)d(\d+)(dl\d+|dh\d+)?$/.exec(body)
+        if (m) {
+          const cnt = Math.max(1, Math.min(50, Number(m[1] || 1)))
+          const faces = Math.max(2, Math.min(1000, Number(m[2])))
+          const first = []
+          for (let i = 0; i < cnt; i++) first.push(randInt(faces))
+          if (advantage && faces === 20 && cnt === 1) {
+            const second = randInt(20)
+            const hi = Math.max(first[0], second), lo = Math.min(first[0], second)
+            kept.push(advantage === 'dis' ? lo : hi)
+            dropped.push(advantage === 'dis' ? hi : lo)
+            diceCount++
+            continue
+          }
+          let vals = first
+          if (m[3]) {
+            const mode = m[3].slice(0, 2), dn = Math.max(1, Number(m[3].slice(2)) || 1)
+            const sorted = vals.slice().sort((a, b) => a - b)
+            const dv = mode === 'dl' ? sorted.slice(0, dn) : sorted.slice(-dn)
+            for (const d of dv) dropped.push(d)
+            vals = mode === 'dl' ? sorted.slice(dn) : sorted.slice(0, Math.max(0, sorted.length - dn))
+          }
+          for (const v of vals) kept.push(v)
+          diceCount += vals.length
+        } else if (/^\d+$/.test(body)) { flat += sign * Number(body) }
+        else return { ok: false, error: '不支持的骰式：' + expr }
+      }
+      if (!diceCount) return { ok: false, error: '缺少骰子（示例 1d20+5、2d6、4d6dl1）' }
+      const total = kept.reduce((a, b) => a + b, 0) + flat
+      const detail = raw + (advantage ? (' ' + advantage) : '') + ' → [' + kept.join(', ') + ']' + (flat ? (flat > 0 ? ' +' + flat : ' ' + flat) : '') + (dropped.length ? ' 弃[' + dropped.join(', ') + ']' : '') + ' = ' + total
+      return { ok: true, expr: raw, advantage: advantage || null, dice: kept, dropped: dropped, flat: flat, total: total, detail: detail }
+    }
+    unreg.push(harness.handle('roll.dice', async (args) => {
+      try {
+        const a = args || {}
+        const adv = (a.advantage === 'adv' || a.advantage === 'dis') ? a.advantage : null
+        const r = rollExpr(a.expr, adv)
+        if (!r.ok) return r
+        if (a.append === false) return { ok: true, total: r.total, detail: r.detail, entry: null }
+        const log = await readLog()
+        log.seq = (Number(log.seq) || 0) + 1
+        const entry = { id: 'e' + log.seq, seq: log.seq, t: nowIso(), round: Number(log.round) || 0, kind: a.kind || 'roll', actor: a.actor || '', text: a.label || '', expr: r.expr, advantage: r.advantage, dice: r.dice, dropped: r.dropped, flat: r.flat, total: r.total, detail: r.detail }
+        log.entries.push(entry)
+        if (log.entries.length > 800) log.entries = log.entries.slice(-800)
+        const w = await writeLog(log)
+        return { ok: true, total: r.total, detail: r.detail, entry: entry, round: log.round, saved: !!w.ok, saveError: w.error || '' }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('log.list', async (args) => {
+      try {
+        const a = args || {}
+        const log = await readLog()
+        const limit = Math.max(1, Math.min(800, Number(a.limit) || 200))
+        return { ok: true, campaign: log.campaign, round: log.round, seq: log.seq, total: log.entries.length, entries: log.entries.slice(-limit), path: LOG_PATH }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('log.append', async (args) => {
+      try {
+        const a = args || {}
+        const list = Array.isArray(a.entries) ? a.entries : (a.entry ? [a.entry] : (a.text ? [a] : []))
+        if (!list.length) return { ok: false, error: '无内容可追加' }
+        const log = await readLog()
+        if (a.campaign) log.campaign = String(a.campaign)
+        if (a.round != null && a.round !== '') log.round = Math.max(0, Number(a.round) || 0)
+        const made = []
+        for (const raw of list) {
+          log.seq = (Number(log.seq) || 0) + 1
+          const e = {
+            id: 'e' + log.seq, seq: log.seq, t: raw.t || nowIso(),
+            round: (raw.round != null && raw.round !== '') ? Number(raw.round) : (Number(log.round) || 0),
+            kind: raw.kind || 'narrate', actor: raw.actor || '', text: raw.text || '',
+            expr: raw.expr || '', advantage: raw.advantage || null, dice: raw.dice || [], dropped: raw.dropped || [],
+            flat: Number(raw.flat) || 0, total: (raw.total == null || raw.total === '') ? null : Number(raw.total), detail: raw.detail || '',
+          }
+          log.entries.push(e)
+          made.push(e)
+        }
+        if (log.entries.length > 800) log.entries = log.entries.slice(-800)
+        const w = await writeLog(log)
+        return { ok: true, added: made.length, round: log.round, ids: made.map(e => e.id), saved: !!w.ok, saveError: w.error || '' }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('log.set', async (args) => {
+      try {
+        const a = args || {}
+        const log = await readLog()
+        if (a.campaign != null && a.campaign !== '') log.campaign = String(a.campaign)
+        if (a.round != null && a.round !== '') log.round = Math.max(0, Number(a.round) || 0)
+        const w = await writeLog(log)
+        return { ok: true, campaign: log.campaign, round: log.round, saved: !!w.ok, saveError: w.error || '' }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('log.clear', async (args) => {
+      try {
+        const a = args || {}
+        const log = { campaign: a.campaign || '', round: 0, seq: 0, entries: [] }
+        const w = await writeLog(log)
+        return { ok: true, cleared: true, saved: !!w.ok, saveError: w.error || '' }
       } catch (e) { return { ok: false, error: String(e && e.message || e) } }
     }))
     return () => { unreg.forEach(f => f()) }

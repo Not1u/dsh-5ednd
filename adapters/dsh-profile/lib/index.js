@@ -21,6 +21,7 @@ const OPS = [
   'party.list', 'party.sheet', 'build.options', 'build.caster', 'build.create',
   'levelset.info', 'levelset.apply', 'sheet.equip', 'sheet.item.add', 'sheet.item.remove',
   'sheet.condition.set', 'sheet.pack.take', 'sheet.patch', 'multiclass.add', 'rules.stats', 'rules.search', 'rules.read', 'ui.source',
+  'roll.dice', 'log.list', 'log.append', 'log.set', 'log.clear',
 ]
 
 function sendJson(res, status, payload) {

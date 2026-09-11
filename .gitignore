@@ -13,3 +13,7 @@ engine/_src-*.html
 
 # 规则书索引已按项目要求内置（学习用途）
 # data/rules-index/ 不再忽略
+
+# 运行时数据：战斗记录（每场战役都会变，不入库）
+data/combat-log.json
+_probe-*.mjs

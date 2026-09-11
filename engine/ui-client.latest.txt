@@ -1,4 +1,4 @@
-// v16 client — spell pick cards show full spell detail; pools pre-filtered by host
+// v17 client — 战斗记录 / 骰子面板（骰子直接落盘 data/combat-log.json，DM 与玩家共用一份）
 const h = React.createElement
 // —— 统一传输层：优先走同源 HTTP 桥（profile 常驻插件 /dnd5e/api，可直接落盘），
 //    不可用时回退动态插件的 host.call。
@@ -99,6 +99,29 @@ const css = `
 .dndp-tipf .tp-item b{font-weight:600}
 .dndp-tipf .tp-item .tp-desc{color:var(--dsw-alias-label-secondary)}
 .dndp-hl{background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-bg-base);border-radius:3px;padding:0 2px;font-weight:600}
+.dndp-dicebox{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);border-radius:10px;padding:8px 10px;margin:10px 12px}
+.dndp-logbar{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+.dndp-logbar:last-child{margin-bottom:0}
+.dndp-advgrp{display:flex;gap:4px}
+.dndp-btn.tiny{padding:2px 9px;font-size:12px;border-radius:6px}
+.dndp-chips{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 2px}
+.dndp-logrow{display:flex;gap:9px;padding:7px 12px;border-bottom:1px solid var(--dsw-alias-border-l1);align-items:flex-start}
+.dndp-logrow.r{background:var(--dsw-alias-bg-layer-2)}
+.dndp-logk{flex:none;min-width:40px;text-align:center;font-size:11px;padding:1px 6px;border-radius:6px;background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);margin-top:1px;color:var(--dsw-alias-label-secondary)}
+.dndp-logk.k-atk{color:#c98a1a;border-color:#c98a1a66}
+.dndp-logk.k-dmg{color:#d3564b;border-color:#d3564b66}
+.dndp-logk.k-heal{color:#3f9e63;border-color:#3f9e6366}
+.dndp-logk.k-narr{color:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary)}
+.dndp-logk.k-turn{color:#8a63d2;border-color:#8a63d266}
+.dndp-logmain{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.dndp-logline{display:flex;gap:7px;align-items:baseline;flex-wrap:wrap}
+.dndp-logr{font-size:11px;color:var(--dsw-alias-label-secondary);border:1px solid var(--dsw-alias-border-l1);border-radius:5px;padding:0 5px}
+.dndp-loga{font-weight:600}
+.dndp-logt{word-break:break-word}
+.dndp-logd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-2);border-radius:6px;padding:1px 6px;display:inline-block;word-break:break-all}
+.dndp-time{flex:none;font-size:11px;color:var(--dsw-alias-label-secondary);margin-top:2px}
+.dndp-mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.dndp-filters{display:flex;gap:6px;flex-wrap:wrap;padding:8px 12px 2px}
 `
 const AB = ['str', 'dex', 'con', 'int', 'wis', 'cha']
 const ABF = { str: '力量', dex: '敏捷', con: '体质', int: '智力', wis: '感知', cha: '魅力' }
@@ -685,6 +708,133 @@ function Wizard(props) {
   if (err) children.push(h('div', { key: 'e', className: 'dndp-err' }, err))
   return h('div', { className: 'dndp-root' }, h('div', { className: 'dndp-header' }, h('span', { className: 'dndp-ic' }, '＋'), h('span', null, '新建角色'), h('div', { className: 'dndp-sp' }), h('button', { className: 'dndp-btn', onClick: props.onBack }, '取消')), h('div', { className: 'dndp-scroll' }, children))
 }
+const LOGK = {
+  roll: { n: '骰子', c: 'k-roll' }, attack: { n: '攻击', c: 'k-atk' }, damage: { n: '伤害', c: 'k-dmg' },
+  heal: { n: '治疗', c: 'k-heal' }, narrate: { n: '叙述', c: 'k-narr' }, turn: { n: '轮次', c: 'k-turn' },
+  state: { n: '状态', c: 'k-state' }, down: { n: '倒地', c: 'k-dmg' }, dm: { n: 'DM', c: 'k-narr' }, player: { n: '玩家', c: 'k-turn' },
+}
+function logPresets(s) {
+  const out = []
+  if (s && s.attack != null) out.push({ name: '法术攻击 ' + fmt(s.attack), expr: '1d20' + fmt(s.attack) })
+  const m = s && s.weaponStats && s.weaponStats.main
+  if (m) {
+    out.push({ name: (m.name || '主手') + ' 攻击 ' + fmt(m.attack), expr: '1d20' + fmt(m.attack) })
+    out.push({ name: '伤害 ' + m.damage + (m.dmgBonus ? fmt(m.dmgBonus) : ''), expr: m.damage + (m.dmgBonus ? fmt(m.dmgBonus) : '') })
+  }
+  ;['int', 'dex', 'wis', 'con'].forEach(a => { if (s && s.mods) out.push({ name: ABF[a] + '检定', expr: '1d20' + fmt(s.mods[a]) }) })
+  if (s && s.saves) out.push({ name: '敏捷豁免', expr: '1d20' + fmt(s.saves.dex) })
+  out.push({ name: 'd20 裸骰', expr: '1d20' })
+  return out
+}
+function DiceBar(props) {
+  const [expr, setExpr] = React.useState('1d20')
+  const [adv, setAdv] = React.useState('normal')
+  const [label, setLabel] = React.useState('')
+  const [busy, setBusy] = React.useState(false)
+  const [last, setLast] = React.useState('')
+  const actorName = props.actorName || ''
+  const doRoll = async () => {
+    const e = String(expr || '').trim()
+    if (!e) { setLast('请输入骰式'); return }
+    setBusy(true)
+    try {
+      const r = await call('roll.dice', { expr: e, advantage: adv, actor: actorName, label: label })
+      if (r && r.ok) setLast(r.detail + (r.saved === false ? '（未写入文件：' + (r.saveError || '未知') + '）' : '（已记入战斗记录）'))
+      else setLast('失败：' + ((r && r.error) || '未知错误'))
+    } catch (err) { setLast('失败：' + String(err && err.message || err)) }
+    setBusy(false)
+    if (props.onDone) props.onDone()
+  }
+  const kids = []
+  const row1 = [
+    h('input', { key: 'i', className: 'dndp-input dndp-mono', style: { width: 108, flex: 'none' }, value: expr, placeholder: '1d20+5', onChange: e => setExpr(e.target.value), onKeyDown: e => { if (e.key === 'Enter') doRoll() } }),
+    h('div', { key: 'a', className: 'dndp-advgrp' }, [['normal', '普通'], ['adv', '优势'], ['dis', '劣势']].map(x => h('button', { key: x[0], className: 'dndp-btn tiny' + (adv === x[0] ? ' primary' : ''), onClick: () => setAdv(x[0]) }, x[1]))),
+    h('button', { key: 'go', className: 'dndp-btn primary', disabled: busy, onClick: doRoll }, busy ? '投掷中…' : '投掷 d20'),
+  ]
+  kids.push(h('div', { key: 'r1', className: 'dndp-logbar' }, row1))
+  const row2 = []
+  if (props.party && props.party.length) row2.push(h('select', { key: 's', className: 'dndp-input', style: { width: 126, flex: 'none' }, value: props.pcId || '', onChange: e => props.onPick && props.onPick(e.target.value) }, [h('option', { key: '_', value: '' }, '（不署名）')].concat(props.party.map(p => h('option', { key: p.id, value: p.id }, p.name)))))
+  row2.push(h('input', { key: 'l', className: 'dndp-input', style: { flex: 1, minWidth: 120 }, value: label, placeholder: '备注：如「火焰箭 → 地精B」', onChange: e => setLabel(e.target.value) }))
+  kids.push(h('div', { key: 'r2', className: 'dndp-logbar' }, row2))
+  const ps = props.presets || []
+  if (ps.length) kids.push(h('div', { key: 'r3', className: 'dndp-chips' }, ps.map((p, i) => h('button', { key: i, className: 'dndp-btn tiny', title: p.expr, onClick: () => setExpr(p.expr) }, p.name))))
+  if (last) kids.push(h('div', { key: 'r4', className: 'dndp-note hl dndp-mono' }, last))
+  return h('div', { key: 'dice', className: 'dndp-dicebox' }, kids)
+}
+function LogRow(props) {
+  const e = props.e || {}
+  const k = LOGK[e.kind] || { n: e.kind || '—', c: '' }
+  const line = []
+  if (e.actor) line.push(h('span', { key: 'a', className: 'dndp-loga' }, e.actor))
+  if (e.text) line.push(h('span', { key: 't', className: 'dndp-logt' }, e.text))
+  const diceTxt = e.detail || ((e.expr && e.total != null) ? (e.expr + ' = ' + e.total) : '')
+  return h('div', { className: 'dndp-logrow' + (e.kind === 'turn' ? ' r' : '') },
+    h('span', { className: 'dndp-logk ' + k.c }, k.n),
+    h('div', { className: 'dndp-logmain' },
+      h('div', { key: 'l', className: 'dndp-logline' }, line),
+      diceTxt ? h('code', { key: 'd', className: 'dndp-logd' }, diceTxt) : null),
+    h('span', { className: 'dndp-time' }, (e.round ? 'R' + e.round + ' · ' : '') + (e.t ? new Date(e.t).toLocaleTimeString() : '')))
+}
+function LogView(props) {
+  const [log, setLog] = React.useState(null)
+  const [err, setErr] = React.useState('')
+  const [party, setParty] = React.useState(props.party || [])
+  const [pcId, setPcId] = React.useState('')
+  const [sheet, setSheet] = React.useState(null)
+  const [auto, setAuto] = React.useState(true)
+  const [only, setOnly] = React.useState('all')
+  const [msg, setMsg] = React.useState('')
+  const load = () => call('log.list', { limit: 300 }).then(r => { if (r && r.ok) { setLog(r); setErr('') } else setErr((r && r.error) || '读取战斗记录失败') }).catch(e => setErr(String(e && e.message || e)))
+  React.useEffect(() => {
+    load()
+    call('party.list', {}).then(r => { if (r && r.ok) setParty(r.items || []) }).catch(() => { })
+  }, [])
+  React.useEffect(() => {
+    if (!pcId) { setSheet(null); return undefined }
+    call('party.sheet', { id: pcId }).then(r => { if (r && r.ok) setSheet(r.sheet) }).catch(() => { })
+    return undefined
+  }, [pcId])
+  React.useEffect(() => {
+    if (!auto || typeof setInterval !== 'function') return undefined
+    const t = setInterval(load, 3000)
+    return () => clearInterval(t)
+  }, [auto])
+  const bump = async (d) => {
+    const r = await call('log.set', { round: Math.max(0, (Number(log && log.round) || 0) + d) })
+    setMsg(r && r.ok ? ('轮次 → R' + r.round) : ((r && r.error) || '设置失败'))
+    load()
+  }
+  const clear = async () => { const r = await call('log.clear', {}); setMsg(r && r.ok ? '已清空战斗记录' : ((r && r.error) || '清空失败')); load() }
+  const all = (log && log.entries) || []
+  const entries = all.filter(e => {
+    if (only === 'all') return true
+    if (only === 'dice') return !!e.expr
+    if (only === 'dm') return e.kind !== 'roll'
+    return e.actor && e.actor === only
+  })
+  const actorName = (party.find(p => p.id === pcId) || {}).name || ''
+  const head = [
+    h('span', { key: 'i', className: 'dndp-ic' }, '🎲'), h('span', { key: 't' }, '战斗记录'),
+    h('div', { key: 'sp', className: 'dndp-sp' }),
+    h('span', { key: 'c', className: 'dndp-chip' }, (log && log.campaign) || '未命名战役'),
+    h('span', { key: 'r', className: 'dndp-chip' }, 'R' + ((log && log.round) || 0)),
+    h('button', { key: 'b', className: 'dndp-btn', onClick: () => bump(1) }, '轮次 +1'),
+    h('button', { key: 'a', className: 'dndp-btn' + (auto ? ' primary' : ''), onClick: () => setAuto(!auto) }, auto ? '自动刷新 开' : '自动刷新 关'),
+    h('button', { key: 'rf', className: 'dndp-btn', onClick: load }, '刷新'),
+    h('button', { key: 'cl', className: 'dndp-btn', onClick: clear }, '清空'),
+    h('button', { key: 'bk', className: 'dndp-btn', onClick: props.onBack }, '返回'),
+  ]
+  const filters = [['all', '全部'], ['dice', '只看骰子'], ['dm', '只看推进']].concat(party.map(p => [p.name, p.name]))
+  const body = []
+  body.push(h(DiceBar, { key: 'dice', party: party, pcId: pcId, actorName: actorName, presets: logPresets(sheet), onPick: setPcId, onDone: load }))
+  body.push(h('div', { key: 'f', className: 'dndp-filters' }, filters.map(f => h('button', { key: f[0], className: 'dndp-btn tiny' + (only === f[0] ? ' primary' : ''), onClick: () => setOnly(f[0]) }, f[1]))))
+  if (msg) body.push(h('div', { key: 'm', className: 'dndp-note hl' }, msg))
+  if (err) body.push(h('div', { key: 'e', className: 'dndp-err' }, err))
+  if (!all.length) body.push(h('div', { key: 'z', className: 'dndp-empty' }, '还没有记录。用上面的骰子投一次，或让 DM 写入战斗记录。'))
+  entries.slice(-200).forEach((e, i) => body.push(h(LogRow, { key: e.id || i, e: e })))
+  if (all.length > 200) body.push(h('div', { key: 'more', className: 'dndp-note' }, '仅显示最近 200 条（共 ' + all.length + ' 条）'))
+  return h('div', { className: 'dndp-root' }, h('div', { className: 'dndp-header' }, head), h('div', { className: 'dndp-scroll' }, body))
+}
 function PartyView() {
   const [mode, setMode] = React.useState('list')
   const [list, setList] = React.useState(null)
@@ -696,13 +846,14 @@ function PartyView() {
   function open(id) { setLoading(true); setErr(''); call('party.sheet', { id }).then(r => { if (r && r.ok) setSel(r.sheet); else setErr((r && r.error) || 'sheet failed') }).catch(e => setErr(String(e && e.message || e))).then(() => setLoading(false)) }
   React.useEffect(() => { refresh() }, [])
   if (mode === 'build') return h(Boundary, null, h(Wizard, { onDone: () => { setMode('list'); refresh() }, onBack: () => setMode('list') }))
-  if (sel) return h('div', { className: 'dndp-root' }, h('div', { className: 'dndp-header' }, h('span', { className: 'dndp-ic' }, '⚔'), h('span', null, sel.name), h('div', { className: 'dndp-sp' }), h(XpWidget, { s: sel }), h('button', { className: 'dndp-btn', onClick: () => setSel(null) }, '返回列表')), h('div', { className: 'dndp-scroll' }, loading ? h('div', { className: 'dndp-empty' }, '加载中…') : h(Boundary, null, h(Detail, { s: sel, onReload: () => { open(sel.id); refresh() } }))))
+  if (mode === 'log') return h(Boundary, null, h(LogView, { party: list || [], onBack: () => { setMode('list'); refresh() } }))
+  if (sel) return h('div', { className: 'dndp-root' }, h('div', { className: 'dndp-header' }, h('span', { className: 'dndp-ic' }, '⚔'), h('span', null, sel.name), h('div', { className: 'dndp-sp' }), h(XpWidget, { s: sel }), h('button', { className: 'dndp-btn', onClick: () => setMode('log') }, '🎲 战斗记录'), h('button', { className: 'dndp-btn', onClick: () => setSel(null) }, '返回列表')), h('div', { className: 'dndp-scroll' }, loading ? h('div', { className: 'dndp-empty' }, '加载中…') : h(Boundary, null, h(Detail, { s: sel, onReload: () => { open(sel.id); refresh() } }))))
   const rows = []
   if (busy || loading) rows.push(h('div', { key: 'b', className: 'dndp-empty' }, '加载中…'))
   if (err) rows.push(h('div', { key: 'e', className: 'dndp-err' }, err))
   if (list && !list.length) rows.push(h('div', { key: 'z', className: 'dndp-empty' }, '暂无角色，点“+ 新建角色”'))
   ;(list || []).forEach((l, i) => rows.push(h('div', { key: i, className: 'dndp-row', onClick: () => open(l.id) }, h('div', { className: 'dndp-ava' }, (l.name || '?').slice(0, 1)), h('div', { className: 'dndp-main' }, h('div', { className: 'dndp-name' }, l.name), h('div', { className: 'dndp-sub' }, (l.race || '') + (l.cls ? ' · ' + l.cls : ''))), h('span', { className: 'dndp-chip' }, 'L' + l.level), h('span', { className: 'dndp-chip' }, 'HP ' + l.hp + '/' + l.max))))
-  return h('div', { className: 'dndp-root' }, h('div', { className: 'dndp-header' }, h('span', { className: 'dndp-ic' }, '⚔'), h('span', null, 'D&D 5e 角色'), h('div', { className: 'dndp-sp' }), h(UiBadge, null), h('button', { className: 'dndp-btn primary', onClick: () => setMode('build') }, '+ 新建角色')), h('div', { className: 'dndp-scroll' }, rows))
+  return h('div', { className: 'dndp-root' }, h('div', { className: 'dndp-header' }, h('span', { className: 'dndp-ic' }, '⚔'), h('span', null, 'D&D 5e 角色'), h('div', { className: 'dndp-sp' }), h(UiBadge, null), h('button', { className: 'dndp-btn', onClick: () => setMode('log') }, '🎲 战斗记录'), h('button', { className: 'dndp-btn primary', onClick: () => setMode('build') }, '+ 新建角色')), h('div', { className: 'dndp-scroll' }, rows))
 }
 return {
   apply(ctx) {

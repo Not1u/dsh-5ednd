@@ -4,7 +4,7 @@
   "name": "布洛林·铁砧",
   "player": "示例玩家",
   "level": 1,
-  "xp": 0,
+  "xp": 67,
   "alignment": "守序善良",
   "race": "dwarf/mountain",
   "classes": [
@@ -64,7 +64,7 @@
   },
   "spellcasting": null,
   "hp": {
-    "current": 9,
+    "current": 7,
     "max": 13,
     "temp": 0,
     "hitDiceTotal": "1d10",
@@ -131,7 +131,7 @@
     "schemaVersion": "dnd5e.character.v1",
     "campaign": null,
     "createdAt": "2025-01-01T00:00:00Z",
-    "updatedAt": "2026-09-10T03:07:00.938Z"
+    "updatedAt": "2026-09-10T15:30:07.139Z"
   },
   "equipment": {
     "armor": {
