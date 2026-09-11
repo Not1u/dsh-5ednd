@@ -36,6 +36,8 @@ const SHEET = {
   resources: [{ name: '回气', max: 1, note: '短休恢复' }],
   subclass: { name: '勇士', picks: {}, features: [{ name: '强化重击', desc: '19-20 重击' }] },
   choices: { pactBoon: null, invocations: [], feats: ['巨武斗士'] },
+  choicesDetail: [{ kind: '魔契', name: '链之契', desc: '获得可变化形态的魔宠' }, { kind: '祈愿', name: '痛苦魔爆', desc: '魔能爆每束加魅力修正' }, { kind: '自定义', name: '苦痛魔爆', desc: '测试用' }],
+  classFix: [],
   features: { race: [{ name: '黑暗视觉', desc: '60 尺' }], class: [{ name: '回气', desc: '' }], background: [{ name: '军人', desc: '' }] },
   spells: [{ key: 'magicMissile', name: '魔法飞弹', level: 1, school: '塑能', time: '1 动作', range: '120 尺', duration: '立即', fx: '3d4+3 力场' }],
   slots: [{ lv: 1, max: 2 }],
@@ -61,7 +63,21 @@ const LOG = {
   ],
 }
 const PARTY = { ok: true, items: [{ id: 'pc-test', name: '测试角色', race: '矮人', cls: '战士3', level: 3, hp: 24, max: 31 }] }
-const WS = { ok: true, layout: null }  // 由 UI 自身默认布局兜底
+const WS = {
+  ok: true,
+  // 给一份带 activeSheet 的布局：这样深度渲染会真的走到「角色卡」面板（含特性/祈愿栏位）
+  layout: {
+    version: 1,
+    slots: {
+      left: { size: 230, panels: ['roster'] },
+      center: { size: 0, panels: ['map', 'sheet'] },
+      right: { size: 430, panels: ['combat', 'ai', 'log'] },
+      bottom: { size: 210, panels: ['dice'] },
+    },
+    weights: { left: [1], center: [3, 2], right: [2, 3, 3], bottom: [1] },
+    collapsed: [], maximized: null, activeSheet: 'pc-test',
+  },
+}
 
 const CANNED = {
   'ws.get': WS, 'party.list': PARTY, 'party.sheet': { ok: true, sheet: SHEET }, 'map.get': MAP, 'log.list': LOG,
@@ -149,7 +165,7 @@ function captureScope(code) {
   if (!code.includes(marker)) return code
   const names = ['Card', 'Pips', 'XpWidget', 'Sect', 'ChoiceBox', 'LevelSet', 'ManualEdit', 'StatusPanel', 'EquipPanel',
     'Bag', 'RulesPanel', 'Wizard', 'Detail', 'MapPanel', 'LogView', 'LogRow', 'DiceBar', 'PartyView',
-    'Workspace', 'Roster', 'SheetHost', 'StatsPanel', 'PanelFrame', 'AIPanel', 'SettingsPanel', 'CombatPanel', 'DicePanel', 'LevelUpBox', 'MulticlassBox', 'mcPrereqInfo', 'MCLS_ABILITY', 'XpMini', 'buildExpr', 'onAccentOf', 'normThemeLocal', 'themeClassOf', 'themeStyleOf', 'THEME_LIST', 'cellVariation', 'PANEL_DEFS', 'DEFAULT_LAYOUT', 'normLayout',
+    'Workspace', 'Roster', 'SheetHost', 'StatsPanel', 'PanelFrame', 'AIPanel', 'SettingsPanel', 'CombatPanel', 'DicePanel', 'LevelUpBox', 'MulticlassBox', 'mcPrereqInfo', 'MCLS_ABILITY', 'FeatureBox', 'XpMini', 'buildExpr', 'onAccentOf', 'normThemeLocal', 'themeClassOf', 'themeStyleOf', 'THEME_LIST', 'cellVariation', 'PANEL_DEFS', 'DEFAULT_LAYOUT', 'normLayout',
     'slotOf', 'inLayout', 'cellDist', 'cloneLayout', 'reorderPanels', 'TERRAIN', 'WS_SLOTS']
   return code.replace(marker, 'globalThis.__UI_SCOPE__ = { ' + names.join(', ') + ' }\n' + marker)
 }
@@ -249,6 +265,7 @@ tryRender('ManualEdit', { s: SHEET })
 tryRender('StatusPanel', { s: SHEET })
 tryRender('EquipPanel', { s: SHEET })
 tryRender('Bag', { s: SHEET })
+tryRender('FeatureBox', { s: SHEET })
 tryRender('LevelUpBox', { s: SHEET })
 tryRender('MulticlassBox', { s: SHEET })
 tryRender('RulesPanel', {})
@@ -299,6 +316,7 @@ async function deepWorkspace() {
   const roster = has('dndp-ritem')
   const aiMsgs = has('dndp-bubble')
   const xpBars = starts('dndp-xpmini')
+  const featCards = has('dndp-cardwrap')
   const upMarks = has('dndp-xpup')
 
   deep.detail.push('地图格 ' + cells + '（期望 ' + (W * H) + '）')
@@ -307,7 +325,7 @@ async function deepWorkspace() {
   deep.detail.push('面板 ' + panels + ' 个，标题栏 ' + titles + ' 个，分隔条 ' + splitters + ' 条')
   deep.detail.push('角色列表项 ' + roster + '（期望 1）')
   deep.detail.push('AI 对话气泡 ' + aiMsgs + '（期望 2）')
-  deep.detail.push('经验条 ' + xpBars + ' 条，其中升级标记 ' + upMarks + ' 个')
+  deep.detail.push('经验条 ' + xpBars + ' 条，其中升级标记 ' + upMarks + ' 个；特性卡片 ' + featCards + ' 张')
 
   const bad = []
   if (cells !== W * H) bad.push('地图格子数不符')
@@ -316,6 +334,7 @@ async function deepWorkspace() {
   if (titles < 5) bad.push('默认布局应至少 5 个面板标题栏（含 AI 对话）')
   if (aiMsgs !== 2) bad.push('AI 面板历史消息未渲染')
   if (xpBars < 1) bad.push('经验条未渲染（角色行或升级面板）')
+  if (featCards < 3) bad.push('特性/祈愿卡片未渲染（期望 >= 3）')
   if (splitters < 3) bad.push('分隔条数量不足')
   if (!bad.length) notes.push('深度渲染：地图 ' + cells + ' 格 / ' + toks + ' 单位，记录 ' + rows + ' 行，AI 气泡 ' + aiMsgs + ' 个，面板 ' + panels + ' 个，分隔条 ' + splitters + ' 条')
   else { deep.ok = false; bad.forEach((b) => deep.detail.push('✘ ' + b)) }

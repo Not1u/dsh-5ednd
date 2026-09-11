@@ -95,6 +95,51 @@ return {
     }
     const subOptions = (clsKey) => { const cls = subData && subData.classes && subData.classes[clsKey]; return cls ? { chooseLevel: cls.chooseLevel, options: (cls.options || []).map(o => ({ key: o.key, name: o.name, choices: o.choices || null })) } : null }
     const subFeatures = (clsKey, subKey, level) => { const cls = subData && subData.classes && subData.classes[clsKey]; if (!cls) return []; const opt = (cls.options || []).find(o => o.key === subKey); if (!opt) return []; return (opt.features || []).filter(f => Number(f.level) <= level) }
+    // 职业条目规范化：丢掉/补回坏的条目，并把 pc.level 对齐成职业等级之和
+    const inferClassKey = (pc) => {
+      try {
+        const sk = pc.subclass && pc.subclass.key
+        if (sk && subData && subData.classes) {
+          for (const k of Object.keys(subData.classes)) {
+            const opts = (subData.classes[k] || {}).options || []
+            if (opts.some(o => o.key === sk)) return k
+          }
+        }
+        const f = ((pc.features || {}).class) || []
+        if (f.indexOf('bardicInspiration') >= 0) return 'bard'
+        if (f.indexOf('sorcerousOrigin') >= 0) return 'sorcerer'
+        if (f.indexOf('divineDomain') >= 0) return 'cleric'
+        if (f.indexOf('arcaneRecovery') >= 0) return 'wizard'
+        if (f.indexOf('secondWind') >= 0) return 'fighter'
+        const hd = ((pc.hp || {}).hitDiceTotal) || ''
+        if (hd === '1d12') return 'barbarian'
+        if (hd === '1d10') return 'fighter'
+        if (hd === '1d8') return 'cleric'
+        if (hd === '1d6') return ((pc.spellcasting || {}).ability === 'cha') ? 'sorcerer' : 'wizard'
+      } catch (e) { }
+      return null
+    }
+    const normClasses = (pc, srd) => {
+      const src = Array.isArray(pc.classes) ? pc.classes : []
+      const out = []
+      const fixed = []
+      for (const c of src) {
+        const key = c && c.class
+        const lv = Math.max(1, Math.min(20, Number(c && c.level) || 1))
+        if (key && srd.classes[key]) {
+          const ex = out.find(x => x.class === key)
+          if (ex) { ex.level = Math.min(20, ex.level + lv); fixed.push('合并重复的 ' + ((srd.classes[key] || {}).name || key) + ' 等级') }
+          else out.push({ class: key, level: lv })
+        } else {
+          const g = inferClassKey(pc)
+          if (g && srd.classes[g]) { out.push({ class: g, level: lv }); fixed.push('补回丢失的职业名 → ' + ((srd.classes[g] || {}).name || g) + ' Lv' + lv) }
+          else { out.push({ class: null, level: lv }); fixed.push('有 ' + lv + ' 级无法判断职业（需手动指定）') }
+        }
+      }
+      const total = out.reduce((a, c) => a + (Number(c.level) || 0), 0)
+      if (total && Number(pc.level) !== total) fixed.push('总等级 ' + pc.level + ' → ' + total)
+      return { classes: out, total: total || (Number(pc.level) || 1), fixed: fixed, changed: fixed.length > 0 }
+    }
     const resourcesOf = (srd, classes, pc) => {
       const mods = {}; for (const a of AB) mods[a] = modOf(Number((pc.abilities || {})[a] || 10))
       const out = []
@@ -122,7 +167,7 @@ return {
         if (typeof fs.listDir === 'function') { const es = await fs.listDir(dir); names = es.filter(e => /[.]json$/i.test(e.name)).map(e => e.name) }
         else { const es = await fs.readDir(dir); names = es.filter(n => /[.]json$/i.test(n)).map(n => n) }
         await loadSrd(); const items = []
-        for (const n of names) { try { const id0 = n.replace(/[.]json$/i, ''); const pc = overlay.get(id0) ? overlay.get(id0) : JSON.parse(await fsRead(CHAR_DIR + '/' + n)); items.push({ id: pc.id || n.replace(/[.]json$/i, ''), name: pc.name, race: raceNameMap[pc.race] || pc.race, cls: (pc.classes || []).map(c => { const cd = srdCache.classes[c.class]; return ((cd && cd.name) || c.class) + c.level }).join('/'), level: pc.level, hp: pc.hp && pc.hp.current, max: pc.hp && pc.hp.max }) } catch (e) { } }
+        for (const n of names) { try { const id0 = n.replace(/[.]json$/i, ''); const pc = overlay.get(id0) ? overlay.get(id0) : JSON.parse(await fsRead(CHAR_DIR + '/' + n)); items.push({ id: pc.id || n.replace(/[.]json$/i, ''), name: pc.name, race: raceNameMap[pc.race] || pc.race, cls: (function () { try { const nc = normClasses(pc, srdCache).classes; return nc.map(c => ((c.class && (srdCache.classes[c.class] || {}).name) || (c.class ? c.class : '未知职业')) + (Number(c.level) || 1)).join('/') } catch (e) { return (pc.classes || []).map(c => String((c && c.class) || '?')).join('/') } })(), level: pc.level, hp: pc.hp && pc.hp.current, max: pc.hp && pc.hp.max }) } catch (e) { } }
         return { ok: true, items: jclean(items) }
       } catch (e) { return { ok: false, error: String(e && e.message || e) } }
     }))
@@ -163,8 +208,33 @@ return {
         const weaponStats = { main: weaponStat(mainHand), off: weaponStat(offHand) }
         const saveProfs = pc.savingThrowProfs || []
         const saves = {}; for (const a of AB) saves[a] = mods[a] + (saveProfs.includes(a) ? pb : 0)
-        const out = { id: pc.id, name: pc.name, level, xp: Number(pc.xp) || 0, xpNext: level < 20 ? srd.core.xpByLevel[level] : null, xpPrev: srd.core.xpByLevel[level - 1] || 0, race: raceNameMap[pc.race] || pc.race, classes: (pc.classes || []).map(c => { const cd = srd.classes[c.class]; return ((cd && cd.name) || c.class) + ' Lv' + c.level }), clsKeys: (pc.classes || []).map(c => c.class), hp: { cur: pc.hp.current, max: pc.hp.max, temp: pc.hp.temp || 0 }, ac, acOverride: pc.acOverride || null, equipment: equipView, conditions: condList, conditionCatalog: CONDITIONS, acBreakdown: acBreakdown, weaponStats: weaponStats, pb, mods, saves, saveProfs, dc: pc.spellcasting ? pc.spellcasting.dc : null, attack: pc.spellcasting ? pc.spellcasting.attackBonus : null, hitDice: (pc.hp && pc.hp.hitDiceTotal) || '', conditions: pc.conditions || [], spells: [], slots: [], inventory: [], features: { race: [], class: [], background: [] }, subclass: null, choices: { pactBoon: null, invocations: [], feats: (pc.feats || []).map(f => f.name) }, resources: resourcesOf(srd, pc.classes, pc) }
+        const ncInfo = normClasses(pc, srd)
+        if (ncInfo.changed) { try { pc.classes = ncInfo.classes.filter(c => c.class); pc.level = ncInfo.total } catch (e) { } }
+        const out = { id: pc.id, name: pc.name, level, xp: Number(pc.xp) || 0, xpNext: level < 20 ? srd.core.xpByLevel[level] : null, xpPrev: srd.core.xpByLevel[level - 1] || 0, race: raceNameMap[pc.race] || pc.race, classes: ncInfo.classes.map(c => ((c.class && (srd.classes[c.class] || {}).name) || (c.class || '未知职业')) + ' Lv' + c.level), clsKeys: ncInfo.classes.map(c => c.class).filter(Boolean), classFix: ncInfo.fixed, hp: { cur: pc.hp.current, max: pc.hp.max, temp: pc.hp.temp || 0 }, ac, acOverride: pc.acOverride || null, equipment: equipView, conditions: condList, conditionCatalog: CONDITIONS, acBreakdown: acBreakdown, weaponStats: weaponStats, pb, mods, saves, saveProfs, dc: pc.spellcasting ? pc.spellcasting.dc : null, attack: pc.spellcasting ? pc.spellcasting.attackBonus : null, hitDice: (pc.hp && pc.hp.hitDiceTotal) || '', conditions: pc.conditions || [], spells: [], slots: [], inventory: [], features: { race: [], class: [], background: [] }, subclass: null, choices: { pactBoon: null, invocations: [], feats: (pc.feats || []).map(f => f.name) }, resources: resourcesOf(srd, pc.classes, pc) }
         if (pc.choices && pc.choices.pactBoon) { const b = ((subData.extraChoices.warlock || {}).pactBoons || []).find(x => x.key === pc.choices.pactBoon); out.choices.pactBoon = b ? b.name : pc.choices.pactBoon }
+        // 特性/祈愿明细（带说明），给角色卡的「职业特性与祈愿」栏位用
+        out.choicesDetail = []
+        if (pc.choices && pc.choices.pactBoon) { const b = ((subData.extraChoices.warlock || {}).pactBoons || []).find(x => x.key === pc.choices.pactBoon); if (b) out.choicesDetail.push({ kind: '魔契', key: b.key, name: b.name, desc: b.desc || '' }) }
+        for (const k of ((pc.choices && pc.choices.invocations) || [])) {
+          const iv = ((subData.extraChoices.warlock || {}).invocations || []).find(x => x.key === k)
+          out.choicesDetail.push({ kind: '祈愿', key: k, name: (iv && iv.name) || k, desc: (iv && iv.desc) || '' })
+        }
+        for (const ft of (((pc.features || {}).custom) || [])) out.choicesDetail.push({ kind: '自定义', key: ft.name, name: ft.name, desc: ft.desc || '' })
+        // 子职业里的具体选择（例如龙裔血脉的「龙种」）也列出来，并翻译成中文名
+        if (pc.subclass && pc.subclass.key && pc.subclass.picks) {
+          const ownCls = inferClassKey(pc) || ((pc.classes || [])[0] || {}).class
+          const so = subOptions(ownCls)
+          const opt = so && (so.options || []).find(o => o.key === pc.subclass.key)
+          for (const ck of Object.keys(pc.subclass.picks)) {
+            const chosen = pc.subclass.picks[ck]
+            const chOpt = opt && opt.choices && (opt.choices.options || []).find(o => o.key === chosen)
+            out.choicesDetail.push({
+              kind: '子职选项', key: chOpt ? chOpt.key : String(chosen),
+              name: (chOpt && chOpt.name) || String(chosen),
+              desc: ((opt && opt.choices && opt.choices.label) || ck) + '：' + ((chOpt && chOpt.name) || chosen) + '（' + (pc.subclass.name || pc.subclass.key) + '）',
+            })
+          }
+        }
         if (pc.choices && pc.choices.invocations) out.choices.invocations = pc.choices.invocations.map(k => { const i = ((subData.extraChoices.warlock || {}).invocations || []).find(x => x.key === k); return i ? i.name : k })
         if (pc.features) {
           const raceData = srd.races.find(r => r.key === pc.race)
@@ -1232,6 +1302,19 @@ return {
             changes.push('获得 ' + (spec.name || spec.key) + (qty > 1 ? '×' + qty : ''))
           }
         }
+        if (a.features) {
+          pc.features = pc.features || { race: [], class: [], background: [] }
+          pc.features.custom = pc.features.custom || []
+          for (const r of (a.features.remove || [])) { const before = pc.features.custom.length; pc.features.custom = pc.features.custom.filter(x => x.name !== r); if (pc.features.custom.length < before) changes.push('移除特性 ' + r) }
+          for (const ft of (a.features.add || [])) {
+            const spec2 = (typeof ft === 'string') ? { name: ft, desc: '' } : ft
+            if (!spec2.name) continue
+            const idx2 = pc.features.custom.findIndex(x => x.name === spec2.name)
+            const item2 = { name: String(spec2.name), desc: String(spec2.desc || '') }
+            if (idx2 >= 0) pc.features.custom[idx2] = item2; else pc.features.custom.push(item2)
+            changes.push('特性 ' + item2.name)
+          }
+        }
         if (a.currency) { pc.currency = pc.currency || { gp: 0, sp: 0, cp: 0 }; for (const k of ['gp', 'sp', 'cp']) if (a.currency[k] != null) { pc.currency[k] = Math.max(0, (Number(pc.currency[k]) || 0) + Number(a.currency[k])); changes.push(k + ' ' + pc.currency[k]) } }
         if (a.note) pc.notes = (pc.notes ? pc.notes + '\n' : '') + String(a.note)
         pc.meta = pc.meta || {}; pc.meta.updatedAt = nowIso()
@@ -1277,6 +1360,7 @@ return {
         T('map.delete', '地图', '删除一张地图', { id: 'old' }),
         T('pc.awardXp', '角色', '给角色加经验（默认每人全额；per:"split" 平分），会返回谁可以升级并写战斗记录', { amount: 200, per: 'each', reason: '清剿崖顶哨兵' }),
         T('party.xp', '角色', '看全队经验/等级进度与谁可升级', {}),
+        T('pc.repair', '角色', '修复角色卡的职业条目（缺职业名/等级不一致），可只修一张或全部', { id: '' }),
         T('combat.get', '战斗', '取先攻条与当前回合、行动经济、状态', {}),
         T('combat.start', '战斗', '开始战斗：给 entries 或 auto 从地图+角色卡自动掷先攻并排序', { auto: true, campaign: '凡戴尔的失落矿坑' }),
         T('combat.next', '战斗', '推进回合（跨过一轮自动 +1，并结算该单位的带时状态）', { steps: 1, log: '地精的回合' }),
@@ -1400,6 +1484,7 @@ return {
           id: { type: 'string' }, hp: { type: 'number', description: 'HP 增量，负数=受伤' }, hpSet: { type: 'number' }, temp: { type: 'number' },
           xp: { type: 'number', description: '经验增量' }, hpMax: { type: 'number' },
           conditions: { type: 'object', properties: { add: { type: 'array', items: { type: 'object', additionalProperties: true, properties: { key: { type: 'string' }, name: { type: 'string' }, level: { type: 'number' }, note: { type: 'string' } } } }, remove: { type: 'array', items: { type: 'string' } } } },
+          features: { type: 'object', description: '自定义特性（例如「苦痛魔爆：魔能爆每束加魅力修正」）', properties: { add: { type: 'array', items: { type: 'object', additionalProperties: true, properties: { name: { type: 'string' }, desc: { type: 'string' } } } }, remove: { type: 'array', items: { type: 'string' } } } },
           items: { type: 'object', properties: { add: { type: 'array', items: { type: 'object', additionalProperties: true, properties: { key: { type: 'string' }, name: { type: 'string' }, kind: { type: 'string' }, qty: { type: 'number' }, damage: { type: 'string' }, dmgType: { type: 'string' }, acBonus: { type: 'number' } } } }, remove: { type: 'array', items: { type: 'string' } } } },
           currency: { type: 'object', properties: { gp: { type: 'number' }, sp: { type: 'number' }, cp: { type: 'number' } } },
           log: { type: 'string', description: '同时写入战斗记录的一句话' }, logKind: { type: 'string', enum: ['state', 'heal', 'damage', 'narrate'] }, note: { type: 'string' },
@@ -1449,6 +1534,7 @@ return {
       },
       'pc.awardXp': { type: 'object', additionalProperties: true, required: ['amount'], properties: { amount: { type: 'number', description: '经验值，可负' }, per: { type: 'string', enum: ['each', 'split'], description: 'each=每人全额（默认）；split=把 amount 平分给参战者' }, ids: { type: 'array', items: { type: 'string' } }, only: { type: 'string' }, reason: { type: 'string', description: '为什么给（会写进战斗记录）' }, actor: { type: 'string' }, log: { type: 'boolean' } } },
       'party.xp': { type: 'object', properties: {}, additionalProperties: false },
+      'pc.repair': { type: 'object', additionalProperties: true, properties: { id: { type: 'string', description: '留空=修复全部' } } },
       'combat.get': { type: 'object', properties: {}, additionalProperties: false },
       'combat.start': {
         type: 'object', additionalProperties: true,
@@ -1497,7 +1583,7 @@ return {
       'tools.list': { type: 'object', properties: {}, additionalProperties: false },
     }
     // 默认只把这些能力暴露给 AI（省 token：全量 58 个工具约 9k prompt tokens/次）
-    const CORE_TOOLS = ['party.list', 'party.sheet', 'pc.apply', 'pc.awardXp', 'party.xp', 'levelset.info', 'levelset.apply', 'roll.dice', 'log.list', 'log.append', 'log.set',
+    const CORE_TOOLS = ['party.list', 'party.sheet', 'pc.apply', 'pc.awardXp', 'party.xp', 'pc.repair', 'levelset.info', 'levelset.apply', 'roll.dice', 'log.list', 'log.append', 'log.set',
       'map.get', 'map.set', 'map.tiles', 'map.list', 'map.use', 'map.token.add', 'map.token.move', 'map.token.update',
       'map.token.remove', 'map.area', 'map.los', 'map.measure', 'map.batch',
       'combat.get', 'combat.start', 'combat.next', 'combat.economy', 'combat.conditions', 'combat.damage', 'combat.end',
@@ -2017,6 +2103,27 @@ return {
         return out
       } catch (e) { return [] }
     }
+    unreg.push(harness.handle('pc.repair', async (args) => {
+      try {
+        const a = args || {}
+        const srd = await loadSrd(); await loadSubs()
+        const files = await allCharFiles()
+        const targets = a.id ? files.filter(x => x.id === a.id || x.pc.name === a.id) : files
+        if (!targets.length) return { ok: false, error: '找不到角色：' + a.id }
+        const report = []
+        for (const t of targets) {
+          const info = normClasses(t.pc, srd)
+          if (!info.changed) continue
+          t.pc.classes = info.classes.filter(c => c.class)
+          t.pc.level = info.total
+          t.pc.meta = t.pc.meta || {}; t.pc.meta.updatedAt = nowIso()
+          const r = await persist(t.pc)
+          report.push({ id: t.id, name: t.pc.name, changes: info.fixed, saved: !!r.ok })
+        }
+        return jclean({ ok: true, fixed: report, count: report.length,
+          summary: report.length ? ('修复 ' + report.length + ' 张卡：' + report.map(x => x.name + '（' + x.changes.join('；') + '）').join(' | ')) : '所有角色卡的职业条目都正常' })
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
     unreg.push(harness.handle("party.xp", async () => {
       try {
         const srd = await loadSrd()

@@ -79,9 +79,9 @@ const css = `
 .dndp-subtitle{color:var(--dsw-alias-label-secondary);font-size:13px;margin-bottom:14px}
 .dndp-label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--dsw-alias-label-secondary);margin:16px 0 7px}
 .dndp-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-.dndp-cell{background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);border-radius:10px;padding:9px 6px;text-align:center}
-.dndp-cell b{display:block;font-size:17px;font-weight:700}
-.dndp-cell span{font-size:11px;color:var(--dsw-alias-label-secondary);letter-spacing:.04em}
+.dndp-stat{background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);border-radius:10px;padding:9px 6px;text-align:center}
+.dndp-stat b{display:block;font-size:17px;font-weight:700}
+.dndp-stat span{font-size:11px;color:var(--dsw-alias-label-secondary);letter-spacing:.04em}
 .dndp-attr{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
 .dndp-ab{background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);border-radius:9px;padding:8px 10px;display:flex;align-items:center;justify-content:space-between;font-size:14px}
 .dndp-ab .ab{color:var(--dsw-alias-label-secondary);font-size:11px}
@@ -719,6 +719,48 @@ function MulticlassBox(props) {
     msg ? h('div', { className: 'dndp-note hl', style: { marginTop: 6 } }, msg) : null)
 }
 
+// 职业特性与祈愿栏位（含自定义特性，可手动加/删）
+function FeatureBox(props) {
+  const s = props.s
+  const [name, setName] = React.useState('')
+  const [desc, setDesc] = React.useState('')
+  const [busy, setBusy] = React.useState(false)
+  const [msg, setMsg] = React.useState('')
+  const detail = s.choicesDetail || []
+  const invocations = detail.filter(d => d.kind === '祈愿')
+  const pacts = detail.filter(d => d.kind === '魔契')
+  const customs = detail.filter(d => d.kind === '自定义')
+  const picks = detail.filter(d => d.kind === '子职选项')
+  const save = async (payload, note) => {
+    setBusy(true); setMsg('')
+    const r = await call('pc.apply', { id: s.id, features: payload, log: note, logKind: 'state' })
+    if (r && r.ok) { setMsg(r.summary + (r.saved ? '（已保存）' : '（未保存：' + (r.saveError || '') + '）')); setName(''); setDesc(''); if (props.onReload) props.onReload() }
+    else setMsg((r && r.error) || '保存失败')
+    setBusy(false)
+  }
+  const card = (x, key, onDel) => h('span', { key: key, className: 'dndp-cardwrap', onMouseEnter: e => tipShow(e, x.name, [{ name: x.kind || '特性', desc: x.desc || '（暂无说明）' }]), onMouseMove: tipMove, onMouseLeave: tipHide },
+    h('button', { className: 'dndp-opt', style: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', width: 'auto' }, onClick: onDel || undefined, title: onDel ? '点击移除' : (x.desc || '') },
+      h('span', { className: 'dndp-tag', style: { marginRight: 4 } }, x.kind || '特性'), x.name, onDel ? h('span', { style: { opacity: .5, marginLeft: 4 } }, '✕') : null))
+  return h('div', { className: 'dndp-panel' },
+    h('div', { key: 'h', style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
+      h('b', null, '职业特性与祈愿'),
+      h('div', { className: 'dndp-sp' }),
+      h('span', { className: 'dndp-chip' }, '悬停看说明')),
+    pacts.length || invocations.length || picks.length
+      ? h('div', { key: 'k', className: 'dndp-tags', style: { marginTop: 6 } }, [].concat(pacts, invocations, picks).map((x, i) => card(x, 'd' + i)))
+      : h('div', { key: 'n', className: 'dndp-note', style: { marginTop: 6 } }, '还没有祈愿/魔契/子职选项（邪术师升级到相应等级时会在升级向导里让你选，例如「痛苦魔爆」）。'),
+    h('div', { key: 'cl', className: 'dndp-label', style: { marginTop: 10 } }, '自定义特性' + (customs.length ? '（' + customs.length + '）' : '')),
+    customs.length
+      ? h('div', { key: 'c', className: 'dndp-tags' }, customs.map((x, i) => card(x, 'c' + i, () => save({ remove: [x.name] }, '移除特性 ' + x.name))))
+      : h('div', { key: 'cn', className: 'dndp-note' }, '可以在这里记下规则外的特性或备注，例如「苦痛魔爆：魔能爆每束加魅力修正」。'),
+    h('div', { key: 'f', className: 'dndp-grid', style: { marginTop: 8 } },
+      h('div', { className: 'dndp-field', style: { marginBottom: 0 } }, h('label', null, '特性名'), h('input', { className: 'dndp-input', value: name, onChange: e => setName(e.target.value), placeholder: '苦痛魔爆' })),
+      h('div', { className: 'dndp-field', style: { marginBottom: 0 } }, h('label', null, '说明'), h('input', { className: 'dndp-input', value: desc, onChange: e => setDesc(e.target.value), placeholder: '魔能爆每束加魅力修正' }))),
+    h('div', { key: 'go', style: { marginTop: 8 } },
+      h('button', { className: 'dndp-btn primary', disabled: busy || !name, onClick: () => save({ add: [{ name: name, desc: desc }] }, '添加特性 ' + name) }, '添加特性')),
+    msg ? h('div', { key: 'm', className: 'dndp-note hl', style: { marginTop: 6 } }, msg) : null)
+}
+
 // 升级向导：提升本职等级 / 兼职新职业
 function LevelUpBox(props) {
   const s = props.s
@@ -767,14 +809,22 @@ function ManualEdit(props) {
   return h('div', { className: 'dndp-panel' }, kids)
 }function Detail(props) {
   const s = props.s
-  const cells = [['HP', s.hp.cur + '/' + s.hp.max], ['AC', s.ac], ['熟练', '+' + s.pb]].map(x => h('div', { key: x[0], className: 'dndp-cell' }, h('b', null, x[1]), h('span', null, x[0])))
-  if (s.dc) { cells.push(h('div', { key: 'dc', className: 'dndp-cell' }, h('b', null, s.dc), h('span', null, '法术DC'))); cells.push(h('div', { key: 'at', className: 'dndp-cell' }, h('b', null, '+' + s.attack), h('span', null, '法术攻击'))) }
-  cells.push(h('div', { key: 'hd', className: 'dndp-cell' }, h('b', null, s.hitDice || '—'), h('span', null, '生命骰')))
+  const cells = [['HP', s.hp.cur + '/' + s.hp.max], ['AC', s.ac], ['熟练', '+' + s.pb]].map(x => h('div', { key: x[0], className: 'dndp-stat' }, h('b', null, x[1]), h('span', null, x[0])))
+  if (s.dc) { cells.push(h('div', { key: 'dc', className: 'dndp-stat' }, h('b', null, s.dc), h('span', null, '法术DC'))); cells.push(h('div', { key: 'at', className: 'dndp-stat' }, h('b', null, '+' + s.attack), h('span', null, '法术攻击'))) }
+  cells.push(h('div', { key: 'hd', className: 'dndp-stat' }, h('b', null, s.hitDice || '—'), h('span', null, '生命骰')))
   const attrs = AB.map(a => h('div', { key: a, className: 'dndp-ab' }, h('span', { className: 'ab' }, ABF[a]), h('span', { className: 'val' }, fmt(s.mods[a]))))
   const saves = AB.map(a => h('span', { key: a, className: 'dndp-tag' + (s.saveProfs.includes(a) ? ' prof' : '') }, ABF[a] + ' ' + fmt(s.saves[a])))
   const featCard = (f, k) => h(Card, { key: k, title: f.name, tipTitle: f.name, items: [{ name: f.name, desc: f.desc }] })
   const children = []
   children.push(h('div', { key: 'stats', className: 'dndp-stats' }, cells))
+  if (s.classFix && s.classFix.length) {
+    children.push(h('div', { key: 'cf', className: 'dndp-warn', style: { marginTop: 8 } },
+      '⚠ 职业条目有问题：' + s.classFix.join('；'),
+      h('div', { style: { marginTop: 5 } }, h('button', {
+        className: 'dndp-btn tiny primary',
+        onClick: async () => { const r = await call('pc.repair', { id: s.id }); if (props.onReload) props.onReload() },
+      }, '一键修复并保存'))))
+  }
   children.push(h('div', { key: 'lu', style: { marginTop: 10 } }, h(LevelUpBox, { s: s, onReload: props.onReload })))
   children.push(h('div', { key: 'me', style: { marginTop: 10 } }, h(ManualEdit, { s: s, onReload: props.onReload })))
   children.push(h('div', { key: 'st', style: { marginTop: 10 } }, h(StatusPanel, { s: s, onReload: props.onReload })))
@@ -792,12 +842,13 @@ function ManualEdit(props) {
     children.push(h('div', { key: 'chl', className: 'dndp-label' }, '契约与专长'))
     children.push(h('div', { key: 'ch', className: 'dndp-tags' }, tags))
   }
-  children.push(h('div', { key: 'ftl', className: 'dndp-label' }, '特性'))
+  children.push(h('div', { key: 'ftl', className: 'dndp-label' }, '种族 / 职业 / 背景特性'))
   const ft = []
   ;((s.features && s.features.race) || []).forEach((f, i) => ft.push(featCard(f, 'r' + i)))
   ;((s.features && s.features.class) || []).forEach((f, i) => ft.push(featCard(f, 'c' + i)))
   ;((s.features && s.features.background) || []).forEach((f, i) => ft.push(featCard(f, 'b' + i)))
   children.push(h('div', { key: 'ft', className: 'dndp-tags' }, ft))
+  children.push(h('div', { key: 'fb', style: { marginTop: 10 } }, h(FeatureBox, { s: s, onReload: props.onReload })))
   children.push(h('div', { key: 'al', className: 'dndp-label' }, '属性与修正'))
   children.push(h('div', { key: 'attrs', className: 'dndp-attr' }, attrs))
   children.push(h('div', { key: 'svl', className: 'dndp-label' }, '豁免检定'))
