@@ -409,34 +409,80 @@ function ChoiceBox(props) {
 }
 function LevelSet(props) {
   const s = props.s
-  const [target, setTarget] = React.useState(Number(s.level) || 1)
+  const manual = !!props.manual
+  const cur = Number(s.level) || 1
+  const autoTarget = Math.min(20, cur + 1)
+  const xpNext = (s.xpNext == null ? null : Number(s.xpNext))
+  const canLevel = xpNext == null ? true : (Number(s.xp) >= xpNext)
+  const xpShort = xpNext == null ? 0 : Math.max(0, xpNext - Number(s.xp || 0))
+  const [target, setTarget] = React.useState(manual ? cur : autoTarget)
+  const [syncXp, setSyncXp] = React.useState(true)
+  const [open, setOpen] = React.useState(!manual)
   const [info, setInfo] = React.useState(null)
   const [states, setStates] = React.useState([])
   const [busy, setBusy] = React.useState(false)
   const [msg, setMsg] = React.useState('')
-  const calc = () => { call('levelset.info', { id: s.id, target: target }).then(r => { if (r && r.ok) { setInfo(r); setStates((r.pending || []).map(() => ({}))) } else setMsg((r && r.error) || '计算失败') }) }
+  const effTarget = manual ? target : autoTarget
+  const calc = React.useCallback(() => {
+    setMsg('')
+    return call('levelset.info', { id: s.id, target: effTarget }).then(r => { if (r && r.ok) { setInfo(r); setStates((r.pending || []).map(() => ({}))) } else setMsg((r && r.error) || '计算失败') })
+  }, [s.id, effTarget])
+  // 自动升级模式：进面板就算好要选什么
+  React.useEffect(() => { if (!manual && canLevel) calc() }, [s.id, s.level, s.xp, canLevel])
   const doApply = async () => {
     setBusy(true); setMsg('')
     try {
-      const choices = (info.pending || []).map((ch, i) => { const st = states[i] || {}; if (ch.kind === 'subclass') return { kind: 'subclass', key: st.key, picks: st.picks }; if (ch.kind === 'pactBoon') return { kind: 'pactBoon', key: st.key }; if (ch.kind === 'invocation') return { kind: 'invocation', keys: st.keys }; if (ch.kind === 'asi') return Object.assign({ kind: 'asi' }, st); if (ch.kind === 'cantrip' || ch.kind === 'spell') return { kind: ch.kind, keys: st.keys }; return null }).filter(x => x && (x.key || x.keys || x.mode))
-      const r = await call('levelset.apply', { json: JSON.stringify({ id: s.id, target: target, choices: choices }) })
+      const choices = (info && info.pending || []).map((ch, i) => { const st = states[i] || {}; if (ch.kind === 'subclass') return { kind: 'subclass', key: st.key, picks: st.picks }; if (ch.kind === 'pactBoon') return { kind: 'pactBoon', key: st.key }; if (ch.kind === 'invocation') return { kind: 'invocation', keys: st.keys }; if (ch.kind === 'asi') return Object.assign({ kind: 'asi' }, st); if (ch.kind === 'cantrip' || ch.kind === 'spell') return { kind: ch.kind, keys: st.keys }; return null }).filter(x => x && (x.key || x.keys || x.mode))
+      const payload = { id: s.id, target: effTarget, choices: choices }
+      if (manual && syncXp) payload.setXp = true
+      const r = await call('levelset.apply', { json: JSON.stringify(payload) })
       if (r && r.ok) { setMsg(r.summary + (r.saved ? '（已保存）' : '（未保存：' + (r.saveError || '未知原因') + '）')); setInfo(null); if (props.onReload) props.onReload() } else setMsg((r && r.error) || '应用失败')
     } catch (e) { setMsg(String(e && e.message || e)) }
     setBusy(false)
   }
   const kids = []
-  kids.push(h('div', { key: 'h', style: { display: 'flex', alignItems: 'center', gap: 8 } }, h('b', null, '等级调整'), h('div', { className: 'dndp-sp' }), h('button', { className: 'dndp-ico', onClick: () => setTarget(t => Math.max(1, t - 1)) }, '−'), h('b', null, 'Lv' + target), h('button', { className: 'dndp-ico', onClick: () => setTarget(t => Math.min(20, t + 1)) }, '+'), h('button', { className: 'dndp-btn', onClick: calc }, '计算升级内容')))
+  if (manual) {
+    kids.push(h('div', { key: 'h', style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
+      h('b', null, '手动调整等级'),
+      h('span', { className: 'dndp-chip' }, 'DM 覆写'),
+      h('div', { className: 'dndp-sp' }),
+      h('button', { className: 'dndp-btn tiny', onClick: () => setOpen(!open) }, open ? '收起' : '展开')))
+    if (!open) return h('div', { className: 'dndp-panel' }, kids)
+    kids.push(h('div', { key: 'w', className: 'dndp-warn', style: { marginTop: 6 } },
+      '这里直接设定等级，不走经验。跨过需要做选择的等级（例如 Lv3 的子职、Lv4 的属性提升）时请改用上面的「升级（按经验）」。'))
+    kids.push(h('div', { key: 'p', style: { marginTop: 6, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
+      h('button', { className: 'dndp-ico', onClick: () => setTarget(t => Math.max(1, t - 1)) }, '−'),
+      h('b', null, 'Lv' + target),
+      h('button', { className: 'dndp-ico', onClick: () => setTarget(t => Math.min(20, t + 1)) }, '+'),
+      h('input', { className: 'dndp-input', style: { width: 62 }, value: String(target), onChange: e => setTarget(Math.max(1, Math.min(20, Number(e.target.value) || 1))) }),
+      h('label', { style: { display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12 } },
+        h('input', { type: 'checkbox', checked: syncXp, onChange: e => setSyncXp(e.target.checked) }), '同时把经验设为该等级门槛'),
+      h('button', { className: 'dndp-btn', onClick: calc }, '计算影响')))
+  } else {
+    kids.push(h('div', { key: 'h', style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
+      h('b', null, '升级（按经验）'),
+      h('span', { className: 'dndp-chip' }, 'Lv' + cur + ' → Lv' + autoTarget),
+      h('div', { className: 'dndp-sp' }),
+      h('button', { className: 'dndp-btn tiny', onClick: calc }, '重算')))
+    if (!canLevel) {
+      kids.push(h('div', { key: 'x', className: 'dndp-note', style: { marginTop: 6 } },
+        '经验还没满：' + (s.xp || 0) + ' / ' + (xpNext == null ? '—' : xpNext) + '，还差 ' + xpShort + ' 点；升不了级。（DM 可以用下面的「手动调整等级」直接覆写。）'))
+      if (msg) kids.push(h('div', { key: 'm', className: 'dndp-note hl', style: { marginTop: 6 } }, msg))
+      return h('div', { className: 'dndp-panel' }, kids)
+    }
+  }
   if (info && info.ok) {
-    if (info.same) kids.push(h('div', { key: 's', className: 'dndp-note' }, '当前已是 Lv' + info.level))
+    if (info.same) kids.push(h('div', { key: 's', className: 'dndp-note', style: { marginTop: 6 } }, '当前已是 Lv' + info.level))
     else {
-      kids.push(h('div', { key: 'd', className: 'dndp-note' }, 'Lv' + info.level + ' → Lv' + info.target + '：每级 HP ' + (info.hpPerLevel >= 0 ? '+' : '') + info.hpPerLevel))
+      kids.push(h('div', { key: 'd', className: 'dndp-note', style: { marginTop: 6 } }, 'Lv' + info.level + ' → Lv' + info.target + '：每级 HP ' + (info.hpPerLevel >= 0 ? '+' : '') + info.hpPerLevel))
       if (info.slotsAfter && info.slotsAfter.length) kids.push(h('div', { key: 'sl', className: 'dndp-note' }, '调整后法术位：' + info.slotsAfter.map(x => x.lv + '环×' + x.max).join('、')))
       ;(info.pending || []).forEach((ch, i) => kids.push(h('div', { key: 'p' + i, style: { marginTop: 8 } }, h(ChoiceBox, { ch: ch, st: states[i] || {}, setSt: v => setStates(arr => { const n = arr.slice(); n[i] = v; return n }) }))))
       if (!info.pending || !info.pending.length) kids.push(h('div', { key: 'n', className: 'dndp-note' }, '该等级区间无需额外选择'))
-      kids.push(h('div', { key: 'go', style: { marginTop: 10 } }, h('button', { className: 'dndp-btn primary', disabled: busy, onClick: doApply }, '应用等级调整')))
+      kids.push(h('div', { key: 'go', style: { marginTop: 10 } },
+        h('button', { className: 'dndp-btn' + (manual ? '' : ' primary'), disabled: busy, onClick: doApply }, manual ? ('覆写为 Lv' + effTarget + (syncXp ? '（并同步经验）' : '')) : ('升级到 Lv' + effTarget))))
     }
   }
-  if (msg) kids.push(h('div', { key: 'm', className: 'dndp-note hl' }, msg))
+  if (msg) kids.push(h('div', { key: 'm', className: 'dndp-note hl', style: { marginTop: 6 } }, msg))
   return h('div', { className: 'dndp-panel' }, kids)
 }
 function StatusPanel(props) {
@@ -761,21 +807,27 @@ function FeatureBox(props) {
     msg ? h('div', { key: 'm', className: 'dndp-note hl', style: { marginTop: 6 } }, msg) : null)
 }
 
-// 升级向导：提升本职等级 / 兼职新职业
+// 手动调整等级（DM 覆写）——与「按经验升级」完全分开
+function ManualLevelBox(props) {
+  return h(LevelSet, { s: props.s, onReload: props.onReload, manual: true })
+}
+
+// 升级向导（按经验）：提升本职等级 / 兼职新职业
 function LevelUpBox(props) {
   const s = props.s
   const [mode, setMode] = React.useState('advance')
   const canLevel = s.xpNext != null && Number(s.xp) >= Number(s.xpNext)
   return h('div', { className: 'dndp-panel' },
     h('div', { key: 'h', style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
-      h('b', null, '升级 / 兼职'),
+      h('b', null, '升级（按经验）'),
       h(XpMini, { item: { xp: s.xp, next: s.xpNext, pct: (!s.xpNext ? 100 : Math.max(0, Math.min(100, Math.round((Number(s.xp) - Number(s.xpPrev || 0)) / Math.max(1, Number(s.xpNext) - Number(s.xpPrev || 0)) * 100)))), canLevel: canLevel, targetLevel: s.level + 1 } }),
       h('div', { className: 'dndp-sp' }),
       h('div', { className: 'dndp-advgrp' },
         h('button', { className: 'dndp-btn tiny' + (mode === 'advance' ? ' primary' : ''), onClick: () => setMode('advance') }, '提升本职'),
         h('button', { className: 'dndp-btn tiny' + (mode === 'multi' ? ' primary' : ''), onClick: () => setMode('multi') }, '兼职新职业'))),
     canLevel ? h('div', { key: 'b', className: 'dndp-note hl', style: { marginTop: 6 } },
-      '✨ 经验已满（' + s.xp + '/' + s.xpNext + '），可以升到 Lv' + (s.level + 1) + ' —— 选「提升本职」升级本职业，或选「兼职新职业」拿别的职业 1 级。') : null,
+      '✨ 经验已满（' + s.xp + '/' + s.xpNext + '），可以升到 Lv' + (s.level + 1) + ' —— 选「提升本职」升级本职业，或选「兼职新职业」拿别的职业 1 级。') : h('div', { key: 'b2', className: 'dndp-note', style: { marginTop: 6 } },
+      '经验未满（' + (s.xp || 0) + '/' + (s.xpNext == null ? '—' : s.xpNext) + '）：升不了级；需要直接改等级请用下面的「手动调整等级」。'),
     h('div', { key: 'body', style: { marginTop: 8 } },
       mode === 'advance' ? h(LevelSet, { s: s, onReload: props.onReload }) : h(MulticlassBox, { s: s, onReload: props.onReload })))
 }
@@ -826,6 +878,7 @@ function ManualEdit(props) {
       }, '一键修复并保存'))))
   }
   children.push(h('div', { key: 'lu', style: { marginTop: 10 } }, h(LevelUpBox, { s: s, onReload: props.onReload })))
+  children.push(h('div', { key: 'ml', style: { marginTop: 10 } }, h(ManualLevelBox, { s: s, onReload: props.onReload })))
   children.push(h('div', { key: 'me', style: { marginTop: 10 } }, h(ManualEdit, { s: s, onReload: props.onReload })))
   children.push(h('div', { key: 'st', style: { marginTop: 10 } }, h(StatusPanel, { s: s, onReload: props.onReload })))
   if (s.resources && s.resources.length) { children.push(h('div', { key: 'resl', className: 'dndp-label' }, '职业资源')); children.push(h('div', { key: 'res', className: 'dndp-tags' }, s.resources.map((r, i) => h('span', { key: i, className: 'dndp-tag' }, r.name + ' ' + r.max + (r.note ? '（' + r.note + '）' : ''))))) }

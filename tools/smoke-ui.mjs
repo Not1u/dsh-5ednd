@@ -165,7 +165,7 @@ function captureScope(code) {
   if (!code.includes(marker)) return code
   const names = ['Card', 'Pips', 'XpWidget', 'Sect', 'ChoiceBox', 'LevelSet', 'ManualEdit', 'StatusPanel', 'EquipPanel',
     'Bag', 'RulesPanel', 'Wizard', 'Detail', 'MapPanel', 'LogView', 'LogRow', 'DiceBar', 'PartyView',
-    'Workspace', 'Roster', 'SheetHost', 'StatsPanel', 'PanelFrame', 'AIPanel', 'SettingsPanel', 'CombatPanel', 'DicePanel', 'LevelUpBox', 'MulticlassBox', 'mcPrereqInfo', 'MCLS_ABILITY', 'FeatureBox', 'XpMini', 'buildExpr', 'onAccentOf', 'normThemeLocal', 'themeClassOf', 'themeStyleOf', 'THEME_LIST', 'cellVariation', 'PANEL_DEFS', 'DEFAULT_LAYOUT', 'normLayout',
+    'Workspace', 'Roster', 'SheetHost', 'StatsPanel', 'PanelFrame', 'AIPanel', 'SettingsPanel', 'CombatPanel', 'DicePanel', 'LevelUpBox', 'MulticlassBox', 'ManualLevelBox', 'mcPrereqInfo', 'MCLS_ABILITY', 'FeatureBox', 'XpMini', 'buildExpr', 'onAccentOf', 'normThemeLocal', 'themeClassOf', 'themeStyleOf', 'THEME_LIST', 'cellVariation', 'PANEL_DEFS', 'DEFAULT_LAYOUT', 'normLayout',
     'slotOf', 'inLayout', 'cellDist', 'cloneLayout', 'reorderPanels', 'TERRAIN', 'WS_SLOTS']
   return code.replace(marker, 'globalThis.__UI_SCOPE__ = { ' + names.join(', ') + ' }\n' + marker)
 }
@@ -267,6 +267,8 @@ tryRender('EquipPanel', { s: SHEET })
 tryRender('Bag', { s: SHEET })
 tryRender('FeatureBox', { s: SHEET })
 tryRender('LevelUpBox', { s: SHEET })
+tryRender('ManualLevelBox', { s: SHEET })
+tryRender('LevelSet', { s: SHEET, manual: true })
 tryRender('MulticlassBox', { s: SHEET })
 tryRender('RulesPanel', {})
 tryRender('Detail', { s: SHEET })
@@ -317,6 +319,7 @@ async function deepWorkspace() {
   const aiMsgs = has('dndp-bubble')
   const xpBars = starts('dndp-xpmini')
   const featCards = has('dndp-cardwrap')
+  const warnBoxes = has('dndp-warn')
   const upMarks = has('dndp-xpup')
 
   deep.detail.push('地图格 ' + cells + '（期望 ' + (W * H) + '）')
@@ -325,7 +328,7 @@ async function deepWorkspace() {
   deep.detail.push('面板 ' + panels + ' 个，标题栏 ' + titles + ' 个，分隔条 ' + splitters + ' 条')
   deep.detail.push('角色列表项 ' + roster + '（期望 1）')
   deep.detail.push('AI 对话气泡 ' + aiMsgs + '（期望 2）')
-  deep.detail.push('经验条 ' + xpBars + ' 条，其中升级标记 ' + upMarks + ' 个；特性卡片 ' + featCards + ' 张')
+  deep.detail.push('经验条 ' + xpBars + ' 条；特性卡片 ' + featCards + ' 张；提示块 ' + warnBoxes + ' 个')
 
   const bad = []
   if (cells !== W * H) bad.push('地图格子数不符')

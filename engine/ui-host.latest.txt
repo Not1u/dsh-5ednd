@@ -61,8 +61,10 @@ return {
         return (v && typeof v === 'object') ? v : { ok: false, error: 'unexpected tool result' }
       } catch (e) { return { ok: false, error: String(e && e.message || e) } }
     }
+    const overlayAt = new Map()
     const persist = async (pc) => {
       overlay.set(pc.id, pc)
+      try { overlayAt.set(String(pc.id), Date.now()) } catch (e) { }
       if (typeof DND5E_WRITE === 'function') {
         try {
           const wr = await DND5E_WRITE(CHAR_DIR + '/' + pc.id + '.json', JSON.stringify(pc, null, 2))
@@ -75,6 +77,23 @@ return {
     }
     const jclean = (v) => { if (v === undefined) return null; if (v === null) return null; if (Array.isArray(v)) return v.map(jclean); if (typeof v === 'object') { const o = {}; for (const k of Object.keys(v)) o[k] = jclean(v[k]); return o } return v }
     const fsRead = async (p) => { const fs = ctx.get('fs'); const t = await fs.resolve(p); let s = await fs.readText(t); if (s.charCodeAt(0) === 0xfeff) s = s.slice(1); return s }
+    // 统一读角色：优先内存缓存，但**磁盘文件更新（例如 AI 或脚本直接改档）时自动失效重读**
+    const readPc = async (idOrFile) => {
+      const safe = String(idOrFile).replace(/[.]json$/i, '').replace(/[^A-Za-z0-9._-]/g, '')
+      const path = CHAR_DIR + '/' + safe + '.json'
+      const cached = overlay.get(safe) || overlay.get(String(idOrFile))
+      if (cached) {
+        try {
+          const fs2 = ctx.get('fs')
+          const abs = await fs2.resolve(path)
+          const st = fs2.stat ? await fs2.stat(abs) : null
+          const at = overlayAt.get(String(cached.id || safe)) || 0
+          if (st && st.mtimeMs && st.mtimeMs > at + 50) { overlay.delete(safe); overlay.delete(String(cached.id || safe)); return JSON.parse(await fsRead(path)) }
+        } catch (e) { }
+        return cached
+      }
+      return JSON.parse(await fsRead(path))
+    }
     const loadSrd = async () => { if (!srdCache) { srdCache = JSON.parse(await fsRead(RULES_PATH)); srdCache.races.forEach(r => { raceNameMap[r.key] = r.name }) } return srdCache }
     const loadSpells = async () => { if (!spellList.length) { try { spellList = JSON.parse(await fsRead(SPELLS_PATH)).spells || [] } catch (e) { spellList = [] } } return spellList }
     const loadFeatures = async () => { if (!Object.keys(featMap).length) { try { const f = JSON.parse(await fsRead(FEATURES_PATH)); Object.keys(f.features || {}).forEach(k => { featMap[k] = f.features[k] }) } catch (e) { } } return featMap }
@@ -167,7 +186,7 @@ return {
         if (typeof fs.listDir === 'function') { const es = await fs.listDir(dir); names = es.filter(e => /[.]json$/i.test(e.name)).map(e => e.name) }
         else { const es = await fs.readDir(dir); names = es.filter(n => /[.]json$/i.test(n)).map(n => n) }
         await loadSrd(); const items = []
-        for (const n of names) { try { const id0 = n.replace(/[.]json$/i, ''); const pc = overlay.get(id0) ? overlay.get(id0) : JSON.parse(await fsRead(CHAR_DIR + '/' + n)); items.push({ id: pc.id || n.replace(/[.]json$/i, ''), name: pc.name, race: raceNameMap[pc.race] || pc.race, cls: (function () { try { const nc = normClasses(pc, srdCache).classes; return nc.map(c => ((c.class && (srdCache.classes[c.class] || {}).name) || (c.class ? c.class : '未知职业')) + (Number(c.level) || 1)).join('/') } catch (e) { return (pc.classes || []).map(c => String((c && c.class) || '?')).join('/') } })(), level: pc.level, hp: pc.hp && pc.hp.current, max: pc.hp && pc.hp.max }) } catch (e) { } }
+        for (const n of names) { try { const id0 = n.replace(/[.]json$/i, ''); const pc = await readPc(n); items.push({ id: pc.id || n.replace(/[.]json$/i, ''), name: pc.name, race: raceNameMap[pc.race] || pc.race, cls: (function () { try { const nc = normClasses(pc, srdCache).classes; return nc.map(c => ((c.class && (srdCache.classes[c.class] || {}).name) || (c.class ? c.class : '未知职业')) + (Number(c.level) || 1)).join('/') } catch (e) { return (pc.classes || []).map(c => String((c && c.class) || '?')).join('/') } })(), level: pc.level, hp: pc.hp && pc.hp.current, max: pc.hp && pc.hp.max }) } catch (e) { } }
         return { ok: true, items: jclean(items) }
       } catch (e) { return { ok: false, error: String(e && e.message || e) } }
     }))
@@ -175,7 +194,7 @@ return {
       try {
         const srd = await loadSrd(); await loadSpells(); await loadFeatures(); await loadSubs()
         const safe = String(id).replace(/[^A-Za-z0-9._-]/g, '')
-        const pc = overlay.get(String(id)) ? overlay.get(String(id)) : JSON.parse(await fsRead(CHAR_DIR + '/' + safe + '.json'))
+        const pc = await readPc(safe)
         const level = Number(pc.level) || 1
         const clsKey = (pc.classes || [])[0] && (pc.classes || [])[0].class
         const pb = srd.core.proficiencyBonusByLevel[level - 1]
@@ -327,11 +346,15 @@ return {
       try {
         const srd = await loadSrd(); await loadSubs(); await loadFeats(); await loadSpells()
         const safe = String(id).replace(/[^A-Za-z0-9._-]/g, '')
-        const pc = JSON.parse(await fsRead(CHAR_DIR + '/' + safe + '.json'))
+        const pc = await readPc(safe)
         const cur = Number(pc.level) || 1
         const clsKey = (pc.classes || [])[0] && (pc.classes || [])[0].class
         const t = Math.max(1, Math.min(20, Number(target) || cur))
-        if (t === cur) return { ok: true, same: true, level: cur }
+        const tbl = (srd.core && srd.core.xpByLevel) || []
+        const xp = Number(pc.xp) || 0
+        const xpNext = cur < 20 ? (tbl[cur] == null ? null : Number(tbl[cur])) : null
+        const xpInfo = { xp: xp, xpNext: xpNext, canLevel: xpNext == null ? false : (xp >= xpNext), xpShort: xpNext == null ? 0 : Math.max(0, xpNext - xp) }
+        if (t === cur) return Object.assign({ ok: true, same: true, level: cur }, xpInfo)
         const cd = srd.classes[clsKey] || {}
         const conMod = modOf(Number(pc.abilities.con))
         const hpPer = (Number(cd.levelUpHitDieAverage) || 5) + conMod
@@ -362,7 +385,7 @@ return {
           }
         }
         const slotsAfter = slotsForClasses(srd, (pc.classes || []).map(c => ({ class: c.class, level: c.class === clsKey ? t : c.level })))
-        return jclean({ ok: true, level: cur, target: t, up: t > cur, hpDelta: hpPer * (t - cur), hpPerLevel: hpPer, slotsAfter, pending })
+        return jclean({ ok: true, level: cur, target: t, up: t > cur, hpDelta: hpPer * (t - cur), hpPerLevel: hpPer, slotsAfter, pending, xp: xp, xpNext: xpNext, canLevel: xpInfo.canLevel, xpShort: xpInfo.xpShort })
       } catch (e) { return { ok: false, error: String(e && e.message || e) } }
     }))
     unreg.push(harness.handle('levelset.apply', async ({ json }) => {
@@ -370,7 +393,7 @@ return {
         const srd = await loadSrd(); await loadSubs(); await loadFeats()
         const spec = JSON.parse(json)
         const safe = String(spec.id).replace(/[^A-Za-z0-9._-]/g, '')
-        const pc = JSON.parse(await fsRead(CHAR_DIR + '/' + safe + '.json'))
+        const pc = await readPc(safe)
         const cur = Number(pc.level) || 1
         const clsKey = (pc.classes || [])[0] && (pc.classes || [])[0].class
         const cd = srd.classes[clsKey] || {}
@@ -378,6 +401,11 @@ return {
         const conMod = modOf(Number(pc.abilities.con))
         const hpPer = (Number(cd.levelUpHitDieAverage) || 5) + conMod
         const notes = []
+        if (spec.setXp) {
+          const table = (srd.core && srd.core.xpByLevel) || []
+          const need = table[target - 1]
+          if (need != null) { pc.xp = Math.max(0, Number(need)); notes.push('经验设为 ' + pc.xp + '（Lv' + target + ' 门槛）') }
+        }
         if (target !== cur) {
           pc.level = target
           const primary = (pc.classes || [])[0]
@@ -417,14 +445,14 @@ return {
         if (pc.spellcasting && cd.casting) { const pb2 = srd.core.proficiencyBonusByLevel[target - 1]; pc.spellcasting.dc = 8 + pb2 + modOf(Number(pc.abilities[cd.casting.ability])); pc.spellcasting.attackBonus = pb2 + modOf(Number(pc.abilities[cd.casting.ability])) }
         pc.meta.updatedAt = nowIso()
         const r0 = await persist(pc)
-        return { ok: true, id: pc.id, level: target, notes, saved: !!r0.ok, saveError: r0.error || '', summary: '已调整到 Lv' + target + (notes.length ? '；' + notes.join('；') : ''), character: JSON.stringify(pc) }
+        return { ok: true, id: pc.id, level: target, from: cur, mode: spec.setXp ? 'manual+syncXp' : 'manual', notes, saved: !!r0.ok, saveError: r0.error || '', summary: '已调整到 Lv' + target + (notes.length ? '；' + notes.join('；') : ''), character: JSON.stringify(pc) }
       } catch (e) { return { ok: false, error: String(e && e.message || e) } }
     }))
     unreg.push(harness.handle('sheet.equip', async ({ json }) => {
       try {
         const spec = JSON.parse(json)
         const safe = String(spec.id).replace(/[^A-Za-z0-9._-]/g, '')
-        const pc = overlay.get(String(spec.id)) ? overlay.get(String(spec.id)) : JSON.parse(await fsRead(CHAR_DIR + '/' + safe + '.json'))
+        const pc = await readPc(safe)
         const srd = await loadSrd()
         pc.equipment = pc.equipment || { armor: null, shield: null, mainHand: null, offHand: null, worn: [] }
         pc.inventory = pc.inventory || []
@@ -452,7 +480,7 @@ return {
       try {
         const spec = JSON.parse(json)
         const safe = String(spec.id).replace(/[^A-Za-z0-9._-]/g, '')
-        const pc = overlay.get(String(spec.id)) ? overlay.get(String(spec.id)) : JSON.parse(await fsRead(CHAR_DIR + '/' + safe + '.json'))
+        const pc = await readPc(safe)
         pc.inventory = pc.inventory || []
         const raw = spec.item || {}
         const key = raw.key || ('custom-' + Date.now().toString(36) + '-' + Math.floor(Math.random() * 1000))
@@ -470,7 +498,7 @@ return {
       try {
         const spec = JSON.parse(json)
         const safe = String(spec.id).replace(/[^A-Za-z0-9._-]/g, '')
-        const pc = overlay.get(String(spec.id)) ? overlay.get(String(spec.id)) : JSON.parse(await fsRead(CHAR_DIR + '/' + safe + '.json'))
+        const pc = await readPc(safe)
         pc.inventory = (pc.inventory || []).filter(x => x.key !== spec.key)
         const eq = pc.equipment || {}
         for (const sl of ['armor', 'shield', 'mainHand', 'offHand']) if (eq[sl] && eq[sl].key === spec.key) eq[sl] = null
@@ -486,7 +514,7 @@ return {
       try {
         const spec = JSON.parse(json)
         const safe = String(spec.id).replace(/[^A-Za-z0-9._-]/g, '')
-        const pc = overlay.get(String(spec.id)) ? overlay.get(String(spec.id)) : JSON.parse(await fsRead(CHAR_DIR + '/' + safe + '.json'))
+        const pc = await readPc(safe)
         const norm = (c) => (typeof c === 'string' ? { key: c, name: c } : { key: c.key, name: c.name || c.key, level: c.level || null, note: c.note || '' })
         let list = (pc.conditions || []).map(norm)
         if (spec.clear) list = []
@@ -554,7 +582,7 @@ return {
       try {
         const spec = JSON.parse(json)
         const safe = String(spec.id).replace(/[^A-Za-z0-9._-]/g, '')
-        const pc = overlay.get(String(spec.id)) ? overlay.get(String(spec.id)) : JSON.parse(await fsRead(CHAR_DIR + '/' + safe + '.json'))
+        const pc = await readPc(safe)
         const defs = await loadPacks()
         const def = defs[spec.packKey]
         if (!def) return { ok: false, error: '未知套装：' + spec.packKey }
@@ -638,7 +666,7 @@ return {
       try {
         const spec = JSON.parse(json)
         const safe = String(spec.id).replace(/[^A-Za-z0-9._-]/g, '')
-        const pc = overlay.get(String(spec.id)) ? overlay.get(String(spec.id)) : JSON.parse(await fsRead(CHAR_DIR + '/' + safe + '.json'))
+        const pc = await readPc(safe)
         pc.hp = pc.hp || { current: 1, max: 1, temp: 0 }
         const p = spec.patch || {}
         const notes = []
@@ -658,7 +686,7 @@ return {
         const srd = await loadSrd()
         const spec = JSON.parse(json)
         const safe = String(spec.id).replace(/[^A-Za-z0-9._-]/g, '')
-        const pc = JSON.parse(await fsRead(CHAR_DIR + '/' + safe + '.json'))
+        const pc = await readPc(safe)
         const clsList = pc.classes || []
         const key = spec.cls
         if (!srd.classes[key]) return { ok: false, error: '职业无效' }
@@ -2103,6 +2131,15 @@ return {
         return out
       } catch (e) { return [] }
     }
+    unreg.push(harness.handle('pc.forget', async (args) => {
+      try {
+        const a = args || {}
+        const before = overlay.size
+        if (a.id) { const safe = String(a.id).replace(/[^A-Za-z0-9._-]/g, ''); overlay.delete(safe); overlay.delete(String(a.id)) }
+        else overlay.clear()
+        return { ok: true, cleared: before - overlay.size, summary: '已丢弃 ' + (a.id ? ('角色 ' + a.id) : '全部角色') + ' 的内存缓存（下次读取走磁盘）' }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
     unreg.push(harness.handle('pc.repair', async (args) => {
       try {
         const a = args || {}
