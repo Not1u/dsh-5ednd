@@ -1251,6 +1251,18 @@ return {
         T('map.save', '地图', '把当前地图另存为新的 id', { id: 'cave-2', name: '洞内' }),
         T('map.rename', '地图', '给当前地图改名', { name: '潮汐洞' }),
         T('map.delete', '地图', '删除一张地图', { id: 'old' }),
+        T('combat.get', '战斗', '取先攻条与当前回合、行动经济、状态', {}),
+        T('combat.start', '战斗', '开始战斗：给 entries 或 auto 从地图+角色卡自动掷先攻并排序', { auto: true, campaign: '凡戴尔的失落矿坑' }),
+        T('combat.next', '战斗', '推进回合（跨过一轮自动 +1，并结算该单位的带时状态）', { steps: 1, log: '地精的回合' }),
+        T('combat.economy', '战斗', '记录/重置行动经济（动作/附赠/反应/移动）', { id: 'pc-turiel-mistveil', key: 'action' }),
+        T('combat.conditions', '战斗', '给战斗单位加/减带持续回合的状态，并同步到角色卡', { id: 'pc-turiel-mistveil', add: [{ key: 'poisoned', rounds: 3, note: '毒镖' }], remove: ['prone'] }),
+        T('combat.damage', '战斗', '战斗单位受伤/治疗（同步地图单位与角色卡，并写战斗记录）', { id: 't-地精A', amount: -7, log: '被劈中' }),
+        T('combat.end', '战斗', '结束战斗', {}),
+        T('dice.request', '骰子', '请求玩家投掷：界面会弹出提示，玩家点一下就投，结果写进战斗记录供 AI 读取', { expr: '1d20+2', advantage: 'dis', label: '敏捷豁免（火球术）', actor: '图里尔', dc: 13, kind: 'roll' }),
+        T('dice.pending', '骰子', '看还没被投掷的请求', {}),
+        T('dice.results', '骰子', '读玩家最近的投掷结果（含 DC 成功/失败判定）', { limit: 20 }),
+        T('dice.answer', '骰子', '（一般由界面调用）记录一次投掷结果', { id: 'r1', total: 15, detail: '1d20+2 → [13] +2 = 15' }),
+        T('dice.clear', '骰子', '清空骰子记录', {}),
         T('map.area', '地图', '施法范围模板：给 shape+size（或 spell 名）与 from，算出覆盖哪些格、命中哪些单位', { shape: 'sphere|cone|line|cube|cylinder', size: 20, from: { x: 8, y: 6 }, dir: 'n|ne|e|se|s|sw|w|nw', to: { x: 12, y: 10 } }),
         T('map.los', '地图', '视线与掩体判定：两点之间是否被墙挡住、目标有几成掩体（无/半掩体+2/四分之三+5）', { from: { x: 3, y: 8 }, to: { x: 9, y: 4 } }),
         T('map.batch', '地图', '一次做完一串地图变更（移动/改数值/增删单位/改地形，可顺带写战斗记录）——AI 跑敌人回合用这个', { ops: [{ move: { id: '地精A', x: 4, y: 5 } }, { update: { id: '地精A', patch: { hp: 3 } } }], log: '地精A 冲向布洛林', actor: 'DM' }),
@@ -1409,6 +1421,31 @@ return {
           },
         }, required: ['ops'],
       },
+      'combat.get': { type: 'object', properties: {}, additionalProperties: false },
+      'combat.start': {
+        type: 'object', additionalProperties: true,
+        properties: {
+          auto: { type: 'boolean', description: 'true = 从地图单位与角色卡自动掷先攻' },
+          entries: { type: 'array', items: { type: 'object', additionalProperties: true, properties: { id: { type: 'string' }, name: { type: 'string' }, kind: { type: 'string', enum: ['pc', 'ally', 'enemy'] }, init: { type: 'number' }, hp: { type: 'number' }, max: { type: 'number' }, tokenId: { type: 'string' }, pcId: { type: 'string' } } } },
+          campaign: { type: 'string' }, note: { type: 'string' },
+        },
+      },
+      'combat.next': { type: 'object', additionalProperties: true, properties: { steps: { type: 'number' }, log: { type: 'string' } } },
+      'combat.economy': { type: 'object', additionalProperties: true, properties: { id: { type: 'string' }, key: { type: 'string', enum: ['action', 'bonus', 'reaction', 'move'] }, feet: { type: 'number' }, reset: { type: 'boolean' }, used: { type: 'boolean' } }, required: ['key'] },
+      'combat.conditions': {
+        type: 'object', additionalProperties: true, required: ['id'],
+        properties: {
+          id: { type: 'string' }, log: { type: 'string' },
+          add: { type: 'array', items: { type: 'object', additionalProperties: true, properties: { key: { type: 'string' }, name: { type: 'string' }, level: { type: 'number' }, rounds: { type: 'number', description: '持续回合数；每到自己回合开始递减' }, note: { type: 'string' } } } },
+          remove: { type: 'array', items: { type: 'string' } },
+        },
+      },
+      'combat.damage': { type: 'object', additionalProperties: true, required: ['id', 'amount'], properties: { id: { type: 'string', description: '战斗单位 id 或名字' }, amount: { type: 'number', description: '负数=受伤，正数=治疗' }, log: { type: 'string' } } },
+      'combat.end': { type: 'object', properties: {}, additionalProperties: false },
+      'dice.request': { type: 'object', additionalProperties: true, required: ['expr'], properties: { expr: { type: 'string', description: '如 1d20+2、2d6' }, advantage: { type: 'string', enum: ['normal', 'adv', 'dis'] }, label: { type: 'string', description: '为什么投，如「敏捷豁免（火球术）」' }, actor: { type: 'string' }, dc: { type: 'number' }, kind: { type: 'string' }, why: { type: 'string' } } },
+      'dice.pending': { type: 'object', properties: {}, additionalProperties: false },
+      'dice.results': { type: 'object', additionalProperties: false, properties: { limit: { type: 'number' } } },
+      'dice.clear': { type: 'object', additionalProperties: true, properties: { all: { type: 'boolean' } } },
       'map.area': {
         type: 'object', additionalProperties: true,
         properties: {
@@ -1495,6 +1532,10 @@ return {
       '3b) 敌人/NPC 的一整个回合用 map.batch 一次做完（多个 move/update/add/remove + log），可带 actor 与 log 文本。',
       '3c) 换场景：map.list 看已有地图，map.use 切换；新场地用 map.create（或 map.set 直接铺地形与单位）。地形字符先查 map.tiles。',
       '3d) 放范围法术/技能：map.area（shape+size 或直接给 spell 名）算出覆盖格与命中单位；判掩体与视线用 map.los。',
+      '3e) 战斗流程：combat.start（auto 会自己掷先攻）→ 每轮用 combat.next 推进；combat.damage 结算伤害（会同步地图与角色卡）；',
+      '    combat.conditions 能加带持续回合的状态（到该单位回合会自动递减并提示结束）；combat.economy 记录动作/附赠/反应/移动。',
+      '3f) 需要玩家自己掷骰时（豁免、检定、命中），用 dice.request 弹出提示（写清 expr/label/dc），玩家点一下投完，',
+      '    你用 dice.results 读结果（含成功/失败判定）。不要自己替玩家掷这类骰子。',
       '    建议顺序：先 map.los 确认能打（掩体会给 AC 加值），再 map.area 拿命中名单，然后让每个目标掷豁免（roll.dice）、用 pc.apply / map.batch 结算。',
       '4) 需要摆场景时用 map.set / map.token.add 把地形与单位放到地图上，玩家就能在侧栏直接看到并拖动。',
       '5) 叙事用中文，简洁有画面感。推进到需要玩家做决定的地方就停下，把选择交给玩家，不要替玩家决定行动。',
@@ -1911,7 +1952,258 @@ return {
         })
       } catch (e) { return { ok: false, error: String(e && e.message || e) } }
     }))
-    // ===== 主题（界面配色）：存 data/theme.json =====    // ===== 主题（界面配色）：存 data/theme.json =====    // ===== 主题（界面配色）：存 data/theme.json =====
+    // ===== 先攻条 + 行动经济 + 带持续时间的状态 =====
+    const COMBAT_PATH = ROOT + "/data/combat-state.json"
+    const DICE_PATH = ROOT + "/data/dice.json"
+    const ECON_KEYS = ["action", "bonus", "reaction", "move"]
+    const readCombat = async () => {
+      try { const j = JSON.parse(await fsRead(COMBAT_PATH)); if (j && Array.isArray(j.order)) return j } catch (e) { }
+      return { active: false, round: 0, turnIndex: 0, order: [], notes: "" }
+    }
+    const writeCombat = async (st) => { st.updatedAt = nowIso(); return await writeRaw(COMBAT_PATH, JSON.stringify(st, null, 2)) }
+    const dexModOfChar = async (id) => {
+      try {
+        const pc = JSON.parse(await fsRead(CHAR_DIR + "/" + String(id).replace(/[^A-Za-z0-9._-]/g, "") + ".json"))
+        return modOf(Number((pc.abilities || {}).dex) || 10)
+      } catch (e) { return 0 }
+    }
+    const findEntryIndex = (st, key) => {
+      const k = String(key == null ? "" : key)
+      if (!k) return -1
+      const norm = (x) => String(x || "").replace(/[\s·.．]/g, "")
+      let idx = st.order.findIndex(e => e.id === k)
+      if (idx < 0) idx = st.order.findIndex(e => e.name === k)
+      if (idx < 0) idx = st.order.findIndex(e => e.tokenId && (e.tokenId === k || ("t-" + e.tokenId) === k))
+      if (idx < 0) idx = st.order.findIndex(e => e.pcId && (e.pcId === k || ("pc-" + e.pcId) === k))
+      if (idx < 0) idx = st.order.findIndex(e => norm(e.name) === norm(k))
+      return idx
+    }
+    const combatView = (st) => {
+      const cur = (st.order || [])[st.turnIndex] || null
+      return jclean({
+        ok: true, active: !!st.active, round: st.round || 0, turnIndex: st.turnIndex || 0,
+        order: (st.order || []).map((e, i) => ({ i: i, id: e.id, name: e.name, kind: e.kind, init: e.init, hp: e.hp, max: e.max,
+          active: st.active && i === (st.turnIndex || 0), conditions: e.conditions || [], econ: e.econ || {},
+          tokenId: e.tokenId || null, pcId: e.pcId || null, note: e.note || "", dex: e.dex == null ? null : e.dex })),
+        current: cur ? cur.name : null,
+        summary: st.active ? ("R" + (st.round || 1) + " · 当前 " + (cur ? cur.name : "?") + "（先攻 " + (cur ? cur.init : "-") + "）") : "未开始战斗",
+      })
+    }
+    const syncConditionsToSheet = async (entry) => {
+      if (!entry || !entry.pcId) return
+      try {
+        const pc = JSON.parse(await fsRead(CHAR_DIR + "/" + String(entry.pcId).replace(/[^A-Za-z0-9._-]/g, "") + ".json"))
+        pc.conditions = (entry.conditions || []).map(c => ({ key: c.key, name: c.name, level: (c.level == null ? null : c.level), desc: c.desc || "", note: (c.rounds ? ("剩 " + c.rounds + " 回合") : (c.note || "")) }))
+        pc.meta = pc.meta || {}; pc.meta.updatedAt = nowIso()
+        await persist(pc)
+      } catch (e) { }
+    }
+    unreg.push(harness.handle("combat.get", async () => { try { return combatView(await readCombat()) } catch (e) { return { ok: false, error: String(e && e.message || e) } } }))
+    unreg.push(harness.handle("combat.start", async (args) => {
+      try {
+        const a = args || {}
+        let entries = []
+        if (Array.isArray(a.entries) && a.entries.length) {
+          for (const e of a.entries) entries.push({
+            id: String(e.id || ("c" + Math.random().toString(36).slice(2, 7))), name: String(e.name || "?"), kind: e.kind || "enemy",
+            init: Number(e.init) || 0, hp: (e.hp == null ? null : Number(e.hp)), max: (e.max == null ? null : Number(e.max)),
+            conditions: e.conditions || [], econ: {}, tokenId: e.tokenId || null, pcId: e.pcId || null, note: e.note || "", dex: null,
+          })
+        } else {
+          const map = await readMap()
+          for (const t of (map.tokens || [])) {
+            if (t.hidden || t.kind === "object") continue
+            const dex = (t.dex == null ? (t.kind === "pc" ? null : 2) : Number(t.dex))
+            const init = randInt(20) + (dex == null ? 0 : dex)
+            entries.push({ id: "t-" + t.id, name: t.name, kind: t.kind, init: init, hp: t.hp, max: t.max, conditions: [], econ: {}, tokenId: t.id, pcId: null, note: t.note || "", dex: dex })
+          }
+          try {
+            const fs2 = ctx.get("fs"); const dir = await fs2.resolve(CHAR_DIR)
+            const names = (typeof fs2.listDir === "function") ? (await fs2.listDir(dir)).filter(e => /[.]json$/i.test(e.name)).map(e => e.name) : []
+            const norm = (x) => String(x || "").replace(/[s·.．]/g, "")
+            for (const n of names) {
+              try {
+                const pc = JSON.parse(await fsRead(CHAR_DIR + "/" + n))
+                const dex = modOf(Number((pc.abilities || {}).dex) || 10)
+                // 如果地图上已经有这个角色的单位（名字相同或互为前缀），合并成一条同一条目
+                const hit = entries.find(e => e.kind === "pc" && (e.tokenId === pc.id || norm(e.name) === norm(pc.name) || norm(pc.name).indexOf(norm(e.name)) === 0 || norm(e.name).indexOf(norm(pc.name)) === 0))
+                if (hit) {
+                  hit.pcId = pc.id
+                  hit.name = pc.name
+                  hit.dex = dex
+                  hit.init = randInt(20) + dex
+                  hit.conditions = (hit.conditions || []).concat((pc.conditions || []).map(c => ({ key: c.key, name: c.name, rounds: null })))
+                  hit.note = "角色卡+地图单位"
+                } else {
+                  entries.push({ id: "pc-" + pc.id, name: pc.name, kind: "pc", init: randInt(20) + dex, hp: (pc.hp ? pc.hp.current : null), max: (pc.hp ? pc.hp.max : null), conditions: (pc.conditions || []).map(c => ({ key: c.key, name: c.name, rounds: null })), econ: {}, tokenId: null, pcId: pc.id, note: "", dex: dex })
+                }
+              } catch (e) { }
+            }
+          } catch (e) { }
+        }
+        if (!entries.length) return { ok: false, error: "没有可参战的单位（地图上没有单位，角色卡也读不到）" }
+        entries.sort((x, y) => y.init - x.init || String(x.name).localeCompare(String(y.name)))
+        const st = { active: true, round: 1, turnIndex: 0, order: entries, notes: a.note || "" }
+        const wr = await writeCombat(st)
+        await pushLog([{ kind: "turn", actor: "DM", text: "先攻已定：R1 开始", detail: entries.map(e => e.name + " " + e.init).join("｜") }], { campaign: a.campaign, round: 1 })
+        return Object.assign(combatView(st), { started: entries.length, saved: !!wr.ok, saveError: wr.error || "", summary: "战斗开始：R1，先攻顺序 " + entries.map(e => e.name + "(" + e.init + ")").join(" → ") })
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle("combat.next", async (args) => {
+      try {
+        const a = args || {}
+        const st = await readCombat()
+        if (!st.active) return { ok: false, error: "还没开始战斗（combat.start）" }
+        const events = []
+        const steps = Math.max(1, Math.min(50, Number(a.steps) || 1))
+        for (let k = 0; k < steps; k++) {
+          let idx = (st.turnIndex + 1) % st.order.length
+          if (idx === 0) st.round = (st.round || 1) + 1
+          // 换人时：先结算新行动者的状态时间
+          const cur = st.order[idx]
+          const kept = []
+          for (const c of (cur.conditions || [])) {
+            if (c.rounds == null) { kept.push(c); continue }
+            const left = Number(c.rounds) - 1
+            if (left > 0) { kept.push(Object.assign({}, c, { rounds: left })) } else events.push(cur.name + " 的「" + c.name + "」结束了")
+          }
+          cur.conditions = kept
+          cur.econ = {}
+          st.turnIndex = idx
+          events.push("轮到 " + cur.name + "（R" + st.round + "）")
+          if (cur.pcId) await syncConditionsToSheet(cur)
+          if (!a.steps) break
+        }
+        const wr = await writeCombat(st)
+        const cur = st.order[st.turnIndex]
+        await pushLog([{ kind: "turn", actor: "DM", text: (a.log || ("轮到 " + cur.name)), detail: events.join("；") }], {})
+        return Object.assign(combatView(st), { events: events, saved: !!wr.ok, saveError: wr.error || "", summary: events.join("；") })
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle("combat.economy", async (args) => {
+      try {
+        const a = args || {}
+        const st = await readCombat()
+        let idx = findEntryIndex(st, a.id)
+        if (idx < 0 && a.id == null) idx = st.turnIndex
+        if (idx < 0) return { ok: false, error: "找不到该战斗单位：" + a.id }
+        const e = st.order[idx]
+        e.econ = e.econ || {}
+        const key = String(a.key || a.kind || "")
+        if (!ECON_KEYS.includes(key)) return { ok: false, error: "key 需要 action|bonus|reaction|move" }
+        if (a.reset) e.econ = {}
+        else if (key === "move") e.econ.move = Math.max(0, (Number(e.econ.move) || 0) + (Number(a.feet) || 0))
+        else e.econ[key] = (a.used === false ? false : true)
+        const wr = await writeCombat(st)
+        const used = ECON_KEYS.filter(k => k !== "move" && e.econ[k]).map(k => ({ action: "动作", bonus: "附赠动作", reaction: "反应" })[k])
+        return jclean(Object.assign(combatView(st), { saved: !!wr.ok, summary: e.name + "：" + (used.length ? ("已用 " + used.join("、")) : "行动经济未使用") + (e.econ.move ? ("｜已移动 " + e.econ.move + " 尺") : "") }))
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle("combat.conditions", async (args) => {
+      try {
+        const a = args || {}
+        const st = await readCombat()
+        const idx = findEntryIndex(st, a.id)
+        if (idx < 0) return { ok: false, error: "找不到该战斗单位：" + a.id }
+        const e = st.order[idx]
+        e.conditions = e.conditions || []
+        for (const r of (a.remove || [])) e.conditions = e.conditions.filter(c => c.key !== r)
+        for (const c of (a.add || [])) {
+          const spec = typeof c === "string" ? { key: c } : c
+          const known = CONDITIONS.find(x => x.key === spec.key)
+          const item = { key: spec.key, name: spec.name || (known && known.name) || spec.key, level: (spec.level == null ? null : Number(spec.level)),
+            rounds: (spec.rounds == null || spec.rounds === "" ? null : Number(spec.rounds)), note: spec.note || "" }
+          const at = e.conditions.findIndex(c2 => c2.key === item.key)
+          if (at >= 0) e.conditions[at] = item; else e.conditions.push(item)
+        }
+        const wr = await writeCombat(st)
+        if (e.pcId) await syncConditionsToSheet(e)
+        await pushLog([{ kind: "state", actor: e.name, text: a.log || "状态变化", detail: e.conditions.map(c => c.name + (c.level != null ? " " + c.level : "") + (c.rounds ? "（剩 " + c.rounds + " 回合）" : "")).join("、") || "（无状态）" }], {})
+        return jclean(Object.assign(combatView(st), { saved: !!wr.ok, summary: e.name + " 状态：" + (e.conditions.map(c => c.name + (c.rounds ? "(" + c.rounds + ")" : "")).join("、") || "无") }))
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle("combat.damage", async (args) => {
+      try {
+        const a = args || {}
+        const st = await readCombat()
+        const idx = findEntryIndex(st, a.id)
+        if (idx < 0) return { ok: false, error: "找不到该战斗单位：" + a.id }
+        const e = st.order[idx]
+        const amount = Number(a.amount) || 0
+        if (e.hp != null) {
+          e.hp = Math.max(0, Math.min(e.max == null ? 9999 : e.max, Number(e.hp) + amount))
+        }
+        // 同步到地图单位 + 角色卡
+        if (e.tokenId) { try { const map = await readMap(); const tk = (map.tokens || []).find(t => t.id === e.tokenId); if (tk && tk.hp != null) { tk.hp = Math.max(0, Math.min(tk.max || 9999, Number(tk.hp) + amount)); const wr2 = await writeMap(map); void wr2 } } catch (e2) { } }
+        if (e.pcId) { try { const pc = JSON.parse(await fsRead(CHAR_DIR + "/" + String(e.pcId).replace(/[^A-Za-z0-9._-]/g, "") + ".json")); pc.hp.current = Math.max(0, Math.min(pc.hp.max, Number(pc.hp.current) + amount)); pc.meta = pc.meta || {}; pc.meta.updatedAt = nowIso(); await persist(pc) } catch (e2) { } }
+        const wr = await writeCombat(st)
+        await pushLog([{ kind: amount < 0 ? "damage" : "heal", actor: e.name, text: a.log || (amount < 0 ? "受到伤害" : "恢复生命"), detail: (amount > 0 ? "+" : "") + amount + " → HP " + e.hp + (e.max ? "/" + e.max : "") }], {})
+        return jclean(Object.assign(combatView(st), { saved: !!wr.ok, summary: e.name + " HP " + e.hp + (e.max ? "/" + e.max : "") + "（" + (amount > 0 ? "+" : "") + amount + "）" }))
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle("combat.end", async () => {
+      try {
+        const st = await readCombat()
+        st.active = false; st.turnIndex = 0; st.round = 0; st.order = (st.order || []).map(e => Object.assign({}, e, { econ: {}, conditions: [] }))
+        const wr = await writeCombat(st)
+        return jclean(Object.assign(combatView(st), { saved: !!wr.ok, summary: "战斗结束" }))
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    // ===== 骰子请求：AI 弹提示，玩家点一下就投；结果回写战斗记录供 AI 读取 =====
+    const readDice = async () => {
+      try { const j = JSON.parse(await fsRead(DICE_PATH)); if (j && Array.isArray(j.pending)) return j } catch (e) { }
+      return { seq: 0, pending: [], done: [] }
+    }
+    const writeDice = async (d) => { d.updatedAt = nowIso(); d.done = (d.done || []).slice(-60); d.pending = (d.pending || []).slice(-20); return await writeRaw(DICE_PATH, JSON.stringify(d, null, 2)) }
+    unreg.push(harness.handle("dice.request", async (args) => {
+      try {
+        const a = args || {}
+        if (!a.expr) return { ok: false, error: "需要 expr，例如 1d20+2" }
+        const d = await readDice()
+        d.seq = (Number(d.seq) || 0) + 1
+        const req = {
+          id: "r" + d.seq, t: nowIso(), expr: String(a.expr), advantage: (a.advantage === "adv" || a.advantage === "dis") ? a.advantage : "normal",
+          label: a.label || "", actor: a.actor || "", dc: (a.dc == null || a.dc === "" ? null : Number(a.dc)), kind: a.kind || "roll", why: a.why || "",
+        }
+        d.pending.push(req)
+        const wr = await writeDice(d)
+        return jclean({ ok: true, id: req.id, request: req, saved: !!wr.ok, saveError: wr.error || "", summary: "已请求玩家投掷：" + req.expr + (req.dc ? ("（DC " + req.dc + "）") : "") + (req.label ? (" — " + req.label) : "") })
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle("dice.pending", async () => {
+      try { const d = await readDice(); return jclean({ ok: true, pending: d.pending || [], done: (d.done || []).slice(-10), count: (d.pending || []).length }) }
+      catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle("dice.answer", async (args) => {
+      try {
+        const a = args || {}
+        const d = await readDice()
+        const req = (d.pending || []).find(r => r.id === a.id)
+        if (!req) return { ok: false, error: "没有这条待投请求：" + a.id }
+        d.pending = d.pending.filter(r => r.id !== a.id)
+        const entry = { id: req.id, t: nowIso(), expr: req.expr, advantage: req.advantage, label: req.label, actor: req.actor || a.actor || "",
+          dc: req.dc, dice: a.dice || [], dropped: a.dropped || [], total: (a.total == null ? null : Number(a.total)), detail: a.detail || "",
+          success: (req.dc == null || a.total == null) ? null : (Number(a.total) >= Number(req.dc)), casual: false }
+        d.done.push(entry)
+        const wr = await writeDice(d)
+        await pushLog([{ kind: req.kind || "roll", actor: entry.actor || "玩家", text: (req.label || "") + (req.dc ? ("（DC " + req.dc + "）") : "") + (entry.success === true ? " → 成功" : entry.success === false ? " → 失败" : ""), detail: entry.detail }], {})
+        return jclean({ ok: true, id: req.id, total: entry.total, success: entry.success, detail: entry.detail, dc: req.dc, saved: !!wr.ok, summary: "已记录：" + entry.detail + (req.dc != null ? ("｜DC " + req.dc + " → " + (entry.success ? "成功" : "失败")) : "") })
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle("dice.results", async (args) => {
+      try {
+        const a = args || {}
+        const d = await readDice()
+        const limit = Math.max(1, Math.min(60, Number(a.limit) || 20))
+        const items = (d.done || []).slice(-limit).map(x => ({ id: x.id, t: x.t, expr: x.expr, label: x.label, actor: x.actor, total: x.total, dc: x.dc, success: x.success, detail: x.detail }))
+        return jclean({ ok: true, count: items.length, items: items, pending: (d.pending || []).length, summary: items.length ? items.map(x => (x.actor || "玩家") + " " + x.expr + " = " + x.total + (x.dc != null ? (" vs DC " + x.dc + (x.success ? " 成功" : " 失败")) : "")).join("；") : "还没有玩家投掷记录" })
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle("dice.clear", async (args) => {
+      try { const a = args || {}; const d = await readDice(); if (a.all) { d.pending = []; d.done = [] } else { d.done = [] } const wr = await writeDice(d); return { ok: true, saved: !!wr.ok, summary: a.all ? "已清空请求与记录" : "已清空记录" } }
+      catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    // ===== 主题（界面配色）：存 data/theme.json =====    // ===== 主题（界面配色）：存 data/theme.json =====    // ===== 主题（界面配色）：存 data/theme.json =====    // ===== 主题（界面配色）：存 data/theme.json =====
     const THEME_PATH = ROOT + '/data/theme.json'
     const THEME_PRESETS = {
       azure: { name: 'azure', label: '幽蓝', accent: '#5aa0ff' },

@@ -71,6 +71,16 @@ const CANNED = {
   'ext.image.map': { ok: true, summary: '已导出 data/images/map-test.svg' },
   'ai.history': { ok: true, messages: [{ role: 'user', content: '我推门进去' }, { role: 'assistant', content: '门后是一间库房。', steps: '· log.append ✔' }], model: 'gpt-4o-mini' },
   'ai.tools': { ok: true, count: 42 },
+  'combat.get': { ok: true, active: true, round: 2, turnIndex: 0, current: '图里尔',
+    order: [
+      { i: 0, id: 'pc-turiel', name: '图里尔', kind: 'pc', init: 18, hp: 3, max: 7, active: true, conditions: [{ key: 'poisoned', name: '中毒', rounds: 2 }], econ: { action: true, move: 15 }, pcId: 'pc-turiel-mistveil' },
+      { i: 1, id: 't-地精A', name: '地精A', kind: 'enemy', init: 15, hp: 4, max: 7, conditions: [], econ: {}, tokenId: 'gb-sentryA' },
+      { i: 2, id: 'pc-brolin', name: '布洛林', kind: 'pc', init: 9, hp: 7, max: 13, conditions: [], econ: {} },
+    ], summary: 'R2 · 当前 图里尔（先攻 18）' },
+  'dice.pending': { ok: true, count: 1, pending: [{ id: 'r3', expr: '1d20+2', advantage: 'normal', label: '敏捷豁免（火球术）', dc: 13, kind: 'roll' }], done: [] },
+  'roll.dice': { ok: true, total: 15, detail: '1d20+2 → [13] +2 = 15', dice: [13], dropped: [] },
+  'dice.answer': { ok: true, id: 'r3', total: 15, success: true, detail: '1d20+2 → [13] +2 = 15', summary: '已记录' },
+  'dice.results': { ok: true, count: 0, items: [], pending: 1 },
   'theme.get': { ok: true, theme: { name: 'emerald', mode: 'light', accent: '#4fbf8b' }, presets: { emerald: { name: 'emerald', label: '翡翠', accent: '#4fbf8b' } } },
   'settings.get': { ok: true, path: 'data/ai.json', config: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', temperature: 0.7, maxSteps: 6, extraPrompt: '' }, hasKey: true, keyMask: 'sk-••••abcd', presets: { openai: 'https://api.openai.com/v1', ollama: 'http://127.0.0.1:11434/v1' } },
   'build.options': { ok: true, races: [], classes: [], backgrounds: [], weapons: [], armor: [], packs: [] },
@@ -134,7 +144,7 @@ function captureScope(code) {
   if (!code.includes(marker)) return code
   const names = ['Card', 'Pips', 'XpWidget', 'Sect', 'ChoiceBox', 'LevelSet', 'ManualEdit', 'StatusPanel', 'EquipPanel',
     'Bag', 'RulesPanel', 'Multiclass', 'Wizard', 'Detail', 'MapPanel', 'LogView', 'LogRow', 'DiceBar', 'PartyView',
-    'Workspace', 'Roster', 'SheetHost', 'StatsPanel', 'PanelFrame', 'AIPanel', 'SettingsPanel', 'onAccentOf', 'normThemeLocal', 'themeClassOf', 'themeStyleOf', 'THEME_LIST', 'cellVariation', 'PANEL_DEFS', 'DEFAULT_LAYOUT', 'normLayout',
+    'Workspace', 'Roster', 'SheetHost', 'StatsPanel', 'PanelFrame', 'AIPanel', 'SettingsPanel', 'CombatPanel', 'DicePanel', 'buildExpr', 'onAccentOf', 'normThemeLocal', 'themeClassOf', 'themeStyleOf', 'THEME_LIST', 'cellVariation', 'PANEL_DEFS', 'DEFAULT_LAYOUT', 'normLayout',
     'slotOf', 'inLayout', 'cellDist', 'cloneLayout', 'reorderPanels', 'TERRAIN', 'WS_SLOTS']
   return code.replace(marker, 'globalThis.__UI_SCOPE__ = { ' + names.join(', ') + ' }\n' + marker)
 }
@@ -246,6 +256,8 @@ tryRender('PanelFrame', { id: 'map', layout: scope.DEFAULT_LAYOUT, collapsed: fa
 tryRender('Wizard', {})
 tryRender('PartyView', {})
 tryRender('Workspace', {})
+tryRender('CombatPanel', { conditionCatalog: [{ key: 'prone', name: '倒地' }] })
+tryRender('DicePanel', { theme: { name: 'azure', mode: 'dark', accent: '#5aa0ff' } })
 tryRender('AIPanel', { onOpen() { } })
 tryRender('SettingsPanel', { toolCount: 42, theme: { name: 'amber', mode: 'dark', accent: '#e0a64a' }, onTheme: async () => ({ ok: true }) })
 for (const t of tabs) { try { walk(t.component(), 0); rendered.push('页签 ' + t.title + ' ✔') } catch (e) { problems.push('页签 ' + t.title + ' 渲染异常：' + (e && e.message || e)) } }
@@ -364,6 +376,15 @@ function pureChecks() {
     const diff2 = Object.keys(TM2).filter(k => TM2[k].difficult)
     if (diff2.length < 4) problems.push('困难地形瓦片偏少：' + diff2.length)
     notes.push('瓦片规则：阻挡 ' + solid2.length + ' 种 / 困难 ' + diff2.length + ' 种 / 掩体 ' + cover2.length + ' 种（可支撑视线与掩体判定）')
+  }
+  // 骰池 → 骰式
+  const be = scope.buildExpr
+  if (typeof be === 'function') {
+    const t1 = be({ d20: 2, d6: 1 }, 3)
+    if (t1 !== '1d6+2d20+3') problems.push('骰式拼装不对：' + t1)
+    if (be({}, 0) !== '1d20') problems.push('空骰池应回退 d20：' + be({}, 0))
+    if (be({ d20: 1 }, -2) !== '1d20-2') problems.push('负调整值拼装不对：' + be({ d20: 1 }, -2))
+    notes.push('骰池拼装：' + t1 + ' / ' + be({}, 0) + ' / ' + be({ d20: 1 }, -2))
   }
   const rp = scope.reorderPanels
   if (typeof rp === 'function') {

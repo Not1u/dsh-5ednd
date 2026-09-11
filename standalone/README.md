@@ -1,236 +1,117 @@
-# SoloTRPG
+# dsh-5ednd
 
-**单人跑团独立运行器** —— 把规则书、模组、角色卡、战术地图、战斗记录都装进一个本地服务，
-AI 当 DM，你只需要一个浏览器。**不依赖 DSH，也不依赖本机安装 Node。**
+D&D 5e 跑团套件 —— 面向各类 Harness（DSH Desktop / MCP / CLI）的角色卡、规则引擎与规则书检索器。
 
-## 两种启动方式
+> 三层架构：**核心（core）零依赖** → **适配器（adapters）对接具体 Harness** → **数据（rules / characters）纯 JSON**。
 
-```
-双击  SoloTRPG.exe          ← 打包好的单文件程序（内含 Node 运行时，88 MB）
-```
-
-```bash
-node server.mjs            # 或用 Node 直接跑（开发/调试用），默认 http://127.0.0.1:4620
-```
-
-**打包成 exe**（已构建好，需要重建时）：
-
-```bash
-npm run icon        # 生成 app/icon.ico（纯 Node 画的 d20 图标）
-npm run build:exe   # Node SEA：Node 运行时 + 启动器 + 图标 → SoloTRPG.exe
-```
-
-exe 的行为：定位同目录的数据 → 起服务 → 等端口就绪 → 自动打开浏览器 → 关闭控制台窗口即停止。
-端口已在跑时会直接打开浏览器，不会重复起服务（`SOLOTRPG_NO_BROWSER=1` 可禁用自动开浏览器）。
-
-> exe 需要与 `server.mjs`、`engine/`、`rules/`、`data/`、`characters/`、`plugins/` 放在同一层目录，整个文件夹就是"绿色版"，拷到任何地方都能跑。首次运行 Windows 可能提示"未知发布者"（未签名），点"仍要运行"即可。
-
----
-
-## 现在有什么
-
-界面是 **IDE 式工作区**：地图、角色卡、战斗记录、规则速查、战况统计、建卡向导都是独立面板，
-可以拖动分隔条调大小、折叠、最大化、在四个槽位（左/中/右/底）之间自由摆放，布局自动存到 `data/workspace.json`。
+## 功能
 
 | 模块 | 说明 |
 |---|---|
-| **工作区** | 多面板 + 可拖拽分隔条 + 面板折叠/最大化 + 槽位移动（面板标题栏「⋯」）+ 顶部「面板 ▾」增删 + 一键重置布局 |
-| **AI 对话** | 内置 DM 对话面板：**AI 可以直接调用这座桥上的全部能力**（42 个：规则书检索、模组检索、怪物数值解析、角色卡读写、战斗记录、战术地图、掷骰，以及 `plugins/` 扩展）。它掷的骰子、改的血量、摆的地图会**真实落盘**，你侧栏立刻能看到。工具调用过程在气泡下方逐条列出。 |
-| **⚙ 设置** | 在这里填 API：Base URL（兼容 OpenAI 的 `/chat/completions`）+ API Key + 模型名，另有温度、每轮最大工具步数、补充指令；带「测试连接」和快捷 Base URL（openai / deepseek / moonshot / openrouter / ollama / lmstudio）。密钥写在 `data/ai.json`（也可用环境变量 `DND5E_AI_KEY` 覆盖）。 |
-| **角色** | 建卡向导（SRD 范围内、购点、种族/职业/子职/背景/法术/装备全流程）、角色卡详情、升级到任意等级（子职/专长/法术/兼职）、装备栏、背包（套装可展开、逐件取出）、状态栏、手动改数值 |
-| **🗺 战术地图** | 5 尺格网格、12 种地形（地面/岩壁/溪水·困难/荆棘·困难+半掩体/高地/洞口/门/木板/树/火堆/碎石/虚空）、可拖动单位（带 HP 血条）、拖动即折算距离并记账、点两格测距（5-10-5 规则 + 对角简化）、选中单位显示速度可达区、**自适应缩放**（格子自动填满面板，改窗口大小会重算）、导出 SVG |
-| **🎲 战斗记录** | 骰子栏（骰式/优势/劣势/按角色预设定制）、时间线（轮次/攻击/伤害/治疗/移动/状态分色）、轮次推进、自动刷新、按角色或类型筛选，落盘 `data/combat-log.json` |
-| **规则书** | 内置索引 **6803 条 / 39 本**（玩家手册、城主指南、怪物图鉴、XGE、TCE、模组、第三方…），关键词检索 + 按 id 读全文 |
-| **模组** | **624 条 / 37 本**（含凡戴尔失落矿坑与破碎方尖碑的图鉴与魔法物品）；`mod.statblock` 能把图鉴条目解析成 AC/HP/速度/六维/CR/动作的结构化数值 |
-| **战况统计** | 从战斗记录算每人攻击次数、命中率、重击、伤害、治疗、移动总尺数（示例插件） |
-| **扩展插件** | `plugins/*.mjs` 自动挂到同一座桥上：遭遇战统计、规则速查、**地图导出 SVG + 外置图像模型调用** |
+| **角色卡 UI** | 侧栏页签「D&D 角色」：列表 / 详情（特性悬停、法术伸缩、法术位菱形、状态栏、装备栏、背包卡片、等级调整、手动调整数值、兼职、升级选项） |
+| **建卡向导** | 种族 / 职业 / 子职业（含龙种·地形等子选项）/ 背景 / 27 点购点 / 技能 / 法术 / 起始装备 |
+| **规则引擎** | AC 与攻击推导、法术位（含兼职合并）、升级逐项补选、状态（15 种 5e 状态）、装备与自定物品 |
+| **规则查找器** | 从本地规则书语料建立索引，支持关键词检索、按书过滤、条目全文展开 |
+| **AI DM 工具** | `dnd_sheet` / `dnd_items` / `dnd_equip` / `dnd_conditions` 等，让 AI 直接按描述改写角色状态 |
+| **离线测试** | 假 harness 回归（`tools/test-host.mjs`），改代码先本地跑，不靠线上撞错 |
 
-### 施法范围模板 + 视线/掩体
-
-地图工具栏新增 **「范围」** 与 **「掩体」** 两个工具：
-
-- **范围**：选形状（球 / 锥 / 线 / 立方 / 柱）+ 尺寸（5~100 尺）+ 朝向（8 向），点地图任意格即高亮覆盖范围，
-  并列出**命中的单位**；标签显示"球 20 尺：69 格 · 命中 2"。命中单位的格子会套一圈琥珀色描边。
-- **掩体**：以选中单位（没选就用第一个 PC）为起点，点目标格 → 画出视线（通畅=绿 / 被挡=红），
-  被挡的墙格用红框标出，标签给出结论：`L2 → L6：20 尺｜视线被挡（L4 砖墙）`、
-  `N2 → N6：20 尺｜视线通畅，半掩体（AC +2）`。
-
-规则实现：
-
-- 掩体三档：**无掩体 / 半掩体 AC+2 / 四分之三掩体 AC+5**，全掩体（射线被墙挡住）→ 不可指定目标；
-- 判掩体的依据就是瓦片自带的属性：灌木/荆棘、树、家具 = 半掩体；射线旁紧贴的墙/柱也算半掩体；两种叠加升到四分之三；
-- 起点与终点**紧邻的格子不算阻挡**（可以"探身"绕过墙角），这是最常见的桌面判法；
-- 范围几何：球与柱按半径（中心格到格心距离），立方按边长（居中），锥按 5e 的"末端宽度≈长度"（半角 26.57°），线按长度逐格推进；
-  给了 `to` 就按实际角度，没给就取 8 向。
-
-AI 侧对应 `map.area`（可直接给 `spell` 名，内置火球术/燃烧之手/闪电束/蛛网术/云雾术/冰风暴… 等 24 个常见法术的形状尺寸）
-与 `map.los`；系统提示里也写明了推荐顺序：**先 map.los 确认能不能打（掩体会给 AC 加成）→ map.area 拿命中名单 → 让目标掷豁免 → 结算**。
-
-实测（示例地图）：
+## 目录结构
 
 ```
-火球术 r20 @(12,6)     -> 球 20 尺 → 69 格，命中 2 个单位（狼A、狼B）｜其中 5 格是墙
-燃烧之手 15 尺锥(NE)    -> 锥 15 尺 → 7 格，命中 1 个单位（向导）
-闪电束(法术名) 30 尺线  -> 线 30 尺 → 6 格，命中 2 个单位（向导、冒险者）
-穿砖墙 (11,1)→(11,5)   -> 视线被挡（L4 砖墙）
-走门   (13,1)→(13,5)   -> 视线通畅，半掩体（AC +2）
-```
-### 瓦片与多地图
-
-**21 种程序化瓦片**（不需要任何图片素材，纯 CSS 分层渐变，随格距缩放）：
-
-```
-. 石地   g 草地   v 泥土   s 石砖地   w 木地板   f 家具/桌椅   p 楼梯/斜坡
-# 岩壁   b 砖墙   c 岩柱   ~ 浅水   W 深水   , 灌木/荆棘   ^ 高地/崖顶
-o 洞口   + 木门   = 木板/桥   T 树   ! 火堆/光源   x 碎石/废墟   (空格) 虚空
+core/           零依赖核心：规则检索、配置解析、能力探测
+adapters/       各 Harness 适配层（DSH 动态插件 / 持久插件 / MCP / CLI）
+standalone/     独立运行器外壳（server.mjs + app/ 页面 + 打包脚本）→ 同步到 E:\SoloTRPG
+plugins/        扩展插件（遭遇战统计 / 规则速查 / 地图导出 SVG + 外置图像模型）
+rules/          规则数据：职业、种族、背景、武器护甲、法术(0-9环)、子职业、专长、特性
+characters/     角色档案（demo 模板：矮人战士 / 矮人牧师 / 高等精灵法师）
+schema/         数据 Schema（character.v1）
+tools/          索引器、检索 CLI、迁移脚本、离线测试、UI 冒烟、地图生成
+engine/         引擎源码（host / client）—— DSH 插件与独立运行器共用同一份，支持热重载
+data/rules-index/  规则书索引（按项目决定内置，见下）
 ```
 
-- 写实向细节：墙体/砖墙有**体积感**（内阴影），水面**缓慢起伏**，火堆**闪动**，树冠有投影；
-- 每格按坐标做**确定性微差**（背景偏移 + 极淡内阴影），所以不会像贴瓷砖一样整齐重复；
-- 瓦片带规则信息：阻挡（岩壁/砖墙/岩柱/虚空）、困难地形（水/灌木/碎石/家具）、半掩体 AC+2（灌木/树/家具）——悬停格子会显示；
-- **图例**里的色块现在和格子用同一套瓦片样式（之前 CSS 选择器只写了格子，所以图例是空白的）。
+## 打包成独立程序（SoloTRPG.exe）
 
-**多地图**：地图存在 `data/maps/<id>.json`，索引 `data/maps.json`；地图面板左上角有**下拉切换**、`✎` 改名、`＋新建`。
-AI 也能切：`map.list` / `map.use` / `map.create` / `map.save` / `map.rename` / `map.delete`。
-
-### AI 控制地图
-
-- `map.tiles` 查全部瓦片字符（AI 拼地图前会先看这个）
-- `map.batch` —— **一次调用跑完一整个敌人回合**：`ops` 里可以有 `move` / `update`(改 HP、备注) / `add` / `remove` / `terrain`，还能带 `log` 与 `actor` 直接写进战斗记录
-- `map.token.move` / `map.token.add` / `map.terrain.set` 等单步操作仍然可用
-
-示例（AI 实际发出的调用）：
-
-```json
-{ "op": "map.batch", "args": {
-  "ops": [
-    { "move": { "id": "地精A", "x": 4, "y": 5 } },
-    { "update": { "id": "地精A", "patch": { "hp": 3 } } },
-    { "add": { "token": { "name": "地精B", "kind": "enemy", "x": 8, "y": 7, "hp": 7, "max": 7, "speed": 30 } } }
-  ],
-  "actor": "DM", "log": "地精A 冲下崖壁，另一只地精从洞里钻出来"
-} }
-```
-
-内置了一张瓦片展示图「示例：溪边营地」——在地图面板的下拉里就能切过去看效果。
-### 界面主题
-
-设置面板 → **外观主题**：6 套预设（幽蓝/翡翠/琥珀/紫罗兰/绯樱/石板灰）+ **深色/浅色**切换 + 任意强调色（取色器或 8 个色板），改完立即生效，存 data/theme.json。
-
-- 主题只作用于本插件界面（通过容器级 CSS 变量实现），**不会影响 DSH 自身的配色**；独立运行时连顶部标题栏一起跟随。
-- 强调色上的文字颜色按相对亮度自动选黑/白，所以选亮黄或深蓝都不会看不清。
-- 面板/槽位/分隔条都用强调色推导出的**装饰线**（悬停分隔条会亮起）。浅色模式下地图地形也会切成浅色配色。
-### 面板拖动与动效
-
-- **拖动换位**：按住面板**标题栏**拖到任意槽位，落点会有高亮指示条（左/中/右/底，同栏内也能重排）；松手即生效并自动保存。
-  · 空槽位也留了拖放区（左/右窄条，底栏在拖动时出现），所以面板永远拖得回去。
-  · 只是点一下标题栏不会误移动（有 5px 阈值）。Esc 可取消拖动。
-- **动效**：面板出现/换位用淡入上浮，拖拽时有跟随光标的幽灵卡片 + 落点指示条，分隔条与按钮有悬停/按压反馈，
-  地图上的单位移动是平滑过渡（拖动自身时不加过渡，避免拖影）。
-### AI 怎么接
-
-1. 右上角或 AI 面板里的 **「⚙ 设置」** → 填 **Base URL / API Key / 模型** → 保存 → 「测试连接」。
-   - OpenAI：`https://api.openai.com/v1`
-   - DeepSeek：`https://api.deepseek.com/v1`
-   - 本地：Ollama `http://127.0.0.1:11434/v1`、LM Studio `http://127.0.0.1:1234/v1`（本地模型不需要密钥）
-2. 回到 **💬 AI 对话** 面板说话即可。AI 每轮会自己决定调用哪些工具，工具调用过程显示在回复下方。
-
-AI 拿到的能力清单（`{"op":"ai.tools"}` 可查）：
-
-```
-角色：party.list / party.sheet / pc.apply / levelset.* / sheet.* / build.* …
-骰子：roll.dice（优势劣势、弃骰；会写入战斗记录）
-战斗记录：log.list / log.append / log.set
-地图：map.get / map.set / map.terrain.set / map.token.add|move|update|remove / map.measure
-规则书：rules.stats / rules.search / rules.read
-模组：mod.list / mod.search / mod.read / mod.statblock（图鉴 → AC/HP/六维/CR/动作）
-扩展：ext.encounter.stats / ext.rule.lookup / ext.image.map|list|provider|generate
-```
-
-系统提示里还会注入**当前真实状态**（战役与轮次、每人 HP 与状态与 id、地图名与全部单位坐标/HP），
-所以 AI 一开口就知道现在轮到谁、谁快死了、谁站在哪个格子。相关 op：`ai.chat`（支持 `dryRun`）、`ai.history`、`ai.clear`、`ai.test`、`ai.tools`。
-
-### 工作区怎么用
-
-- **调大小**：拖面板之间的分隔条（竖条调左右宽度，横条调上下高度）。左侧/右侧宽度、底栏高度、同栏内面板比例都会记住。
-- **折叠/最大化**：面板标题栏的 `▾` 和 `⤢`；最大化后按「还原布局」回来。
-- **换位置**：面板标题栏 `⋯` → 选「移到槽位」（左/中/右/底，也可以让同一面板同时出现在多个槽位）。
-- **加面板**：右上角「面板 ▾」→ 点未显示的面板（如「规则速查」「战况统计」「新建角色」）。
-- **重置**：右上角「重置布局」，或 `node tools/dnd-api.mjs ws.reset '{}'`。
-- 布局改动会自动写入 `data/workspace.json`；想在两边同步就把这个文件拷过去。
-
-
-## 目录
-
-```
-SoloTRPG/
-  SoloTRPG.exe            ★ 打包好的单文件程序（内含 Node 运行时）
-  server.mjs              独立运行器（HTTP 服务 + 引擎装载 + 插件装载，均支持热重载）
-  config.json             端口 / 绑定地址 / 数据根目录
-  start.bat               双击启动（优先用 exe，没有则回退到 node）
-  app/                    外壳页面（index.html + mount.js + app.css + vendor/react + icon.ico）
-  engine/                 引擎源码（ui-host.latest.txt / ui-client.latest.txt）★ 核心
-  rules/                  SRD 数据（种族/职业/法术/子职/专长/特性/套装）
-  data/rules-index/       规则书与模组索引（jsonl + manifest）
-  data/map.json           战术地图
-  data/combat-log.json    战斗记录
-  characters/             角色卡
-  plugins/                扩展插件
-  tools/                  sync-from-repo · health · smoke-ui · dnd-api · seed-demo-map · build-exe · make-icon
-  build/                  构建中间产物（SEA blob、postject/resedit，勿删也行）
-```
-
-## 常用命令
+`standalone/` 是"产品形态"的来源；同步并构建：
 
 ```bash
-npm start                                   # = node server.mjs
-npm run build:exe                           # 重新打包 exe
-node tools/health.mjs                       # 接口体检：页面、核心 op、插件、读写落盘
-node tools/smoke-ui.mjs                     # UI 冒烟：不开浏览器，渲染全部 15 个面板，抓未定义引用
-node tools/dnd-api.mjs tools.list '{}'      # 命令行调桥上任意 op
+node standalone/tools/sync-from-repo.mjs --from .      # 外壳 + 引擎 + 数据 → E:\SoloTRPG
+cd E:\SoloTRPG
+npm run build:exe                                      # Node SEA 打包单文件 exe（内含 Node 运行时）
+```
+
+细节见 `standalone/README.md`：单文件 exe、5 尺格战术地图、战斗记录、插件热重载都在那里说明。
+
+## 快速开始
+
+```bash
+# 1) 生成规则书索引（需要你本地合法持有的规则书 HTML/CHM 语料）
+node tools/index-rules.mjs --source "<规则书根目录>"        # 默认 PHB/DMG/PHB24/DMG24/速查/XGE/TCE
+node tools/index-rules.mjs --source "<规则书根目录>" --all  # 全部书目
+
+# 2) 检索
+node tools/find-rules.mjs --stats
+node tools/find-rules.mjs "擒抱"
+node tools/find-rules.mjs "长休" --book 玩家手册
+node tools/find-rules.mjs --read 玩家手册:15
+
+# 3) 离线回归测试
+node tools/test-host.mjs
+node tools/test-equip.mjs
+```
+
+## 配置
+
+数据根目录解析顺序（`core/config.mjs`）：
+
+1. 环境变量 `DND5E_DATA_ROOT`
+2. 仓库根目录的 `config.json`（`{ "dataRoot": "...", "indexDir": "..." }`）
+3. 默认：仓库根目录
+
+**不硬编码任何绝对路径**，换机器 / 换目录只需改配置。
+
+## 兼容性策略（声明范围 + 能力探测 + 降级）
+
+- **声明**：`engines.node >= 20`；插件声明 `dsh.client.platform = web`；peer 依赖使用宽松范围。
+- **探测**：`core/capabilities.mjs` 启动时探测 `harness.handle` / `fs` 读写 / `tools` 服务 / Sidebar 服务 / timer 服务 / 主题 token，缺失即降级而非崩溃：
+
+  | 缺失能力 | 降级行为 |
+  |---|---|
+  | Sidebar 服务 | UI 输出到独立面板或静态 HTML 状态页 |
+  | `tools` 服务 | 使用内置 `node:fs` 直接读写档案 |
+  | timer 服务 | 关闭自动热重载，改为手动刷新 |
+  | 主题 token | 回退到内置默认配色 |
+
+- **数据向前兼容**：档案带 `schemaVersion`，迁移脚本（`tools/migrate-*.mjs`）逐步升级，新字段一律可选。
+- **版本锚点**：`dsh.json` 记录已验证的 DSH 版本，不匹配时给出明确提示。
+
+## 工具层（MCP 风格）
+
+所有能力都收敛到一座**同源 HTTP 桥**上：`POST /dnd5e/api {op, args} → {ok, value}`。
+数据（规则书索引 6803 条、模组 624 条、角色卡、地图、战斗记录）**始终留在磁盘**，
+被调用时才按需取用，因此可以把整套资料挂在 AI 旁边而不占用上下文。
+
+- **工作区**：IDE 式多面板（地图 / 角色卡 / 战斗记录 / 规则速查 / 战况统计），可拖动分隔条调大小、折叠、最大化、四槽位自由摆放，布局存 data/workspace.json（op：ws.get / ws.set / ws.reset）。
+- 发现能力：`{op:"tools.list"}`（核心 op，按角色/骰子/战斗记录/地图/规则书/模组/元 分组）、`{op:"ext.list"}`（插件与扩展 op）。
+- 模组：`mod.list` / `mod.search` / `mod.read` / **`mod.statblock`**（把图鉴条目解析成 AC/HP/速度/六维/CR/动作的结构化数值）。
+- 角色：`party.list` / `party.sheet` / **`pc.apply`**（一次改完 HP、XP、状态、物品、货币，并可写入战斗记录）/ `levelset.*` / `multiclass.add` / `sheet.*`。
+- 地图：`map.get` / `map.set` / `map.terrain.set` / `map.token.*` / `map.measure`（5 尺格、5-10-5 距离）。
+- 战斗记录与骰子：`roll.dice`（优势/劣势/弃骰）/ `log.list|append|set|clear`。
+
+**扩展插件**：把 `.mjs` 丢进 `plugins/` 即可自动挂到同一座桥上（`{name, ops}` 或 `setup(api)`），
+`api` 提供 `repoRoot` / `call(op,args)` / `readJson` / `writeJson` / `log`。详见 `plugins/README.md`，
+现成示例：遭遇战统计、规则速查、**地图导出 SVG + 外置图像模型调用**（`plugins/image-export.mjs`）。
+
+命令行探针（推荐，避开 PowerShell 的编码坑）：
+
+```bash
+node tools/dnd-api.mjs tools.list '{}'
 node tools/dnd-api.mjs mod.statblock '{"title":"熊地精"}'
-node tools/sync-from-repo.mjs               # 从开发仓库同步外壳/引擎/规则/模组/插件（单向）
-node tools/sync-from-repo.mjs --force       # 连角色卡/地图/战斗记录一起覆盖
+node tools/dnd-api.mjs pc.apply '{"id":"pc-turiel-mistveil","hp":-3,"log":"被短弓射中"}'
 ```
 
-## 接口 = 扩展点
+## 许可与版权
 
-所有能力都在一座同源 HTTP 桥上：
-
-```
-POST /api            {op, args} → {ok, value}        （/dnd5e/api 是同一路由的别名）
-GET  /files/<path>   查看仓库内文件（例如导出的地图 SVG）
-GET  /health         健康检查 + 已注册 op 与插件
-```
-
-- 发现能力：`{"op":"tools.list"}`（核心 op，按组分类）、`{"op":"ext.list"}`（插件 op）。
-- AI / 脚本 / 插件走的是同一座桥，**数据留在磁盘上，按需取用**，不往上下文里塞全文。
-- 加功能不用改核心：往 `plugins/` 丢一个 `.mjs`（导出 `ops` 或 `setup(api)`），改完自动热重载。
-
-```js
-// plugins/my-plugin.mjs
-export const name = 'my-plugin'
-export const ops = {
-  'ext.my.op': async (args, api) => ({ ok: true, n: (await api.readJson('data/combat-log.json')).entries.length }),
-}
-```
-
-## 与开发仓库的关系
-
-`E:\HarnessTarvern\dnd5e` 是开发源（也是 GitHub 仓库），本目录是**可运行的产品形态**：
-
-```
-开发仓库  ── node tools/sync-from-repo.mjs ──▶  SoloTRPG（运行）
-   standalone/  →  外壳（server / 页面 / 打包脚本）
-   engine/ rules/ plugins/ tools/ characters/ data/
-```
-
-- 同一份 `engine/ui-client.latest.txt` 既是 DSH 侧栏插件的 UI，也是这里整页应用的 UI。
-- 引擎与插件都按 mtime 热重载：改 `engine/` 或 `plugins/` 下的文件，**刷新页面即生效，不用重启**。
-- 角色卡、地图、战斗记录默认**不覆盖**（sync 时加 `--force` 才会），避免手滑清掉存档。
-
-## 说明
-
-- 需要 Node ≥ 20（用到 `fetch`、`node:crypto`）。
-- React 运行库放在 `app/vendor/`（React 18.3.1 UMD，随目录自带，可离线运行）。
-- 规则书索引版权归原作者与出版方，仅供本地单人跑团自用；见 `NOTICE.md`。
+- **代码**：MIT。
+- **规则数据**（`rules/*.json`）：基于 SRD 5.1（CC-BY-4.0）整理，署名见 `NOTICE.md`。
+- **规则书原文索引**（`data/rules-index/`）：按本项目决定**随仓库内置**（学习／单人跑团自用），语料由使用者本地合法持有的规则书生成（`tools/index-rules.mjs`）。版权归原作者与出版方，若权利人要求将移除，见 `NOTICE.md`。

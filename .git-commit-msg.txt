@@ -1,0 +1,10 @@
+feat(combat+dice): 先攻条/行动经济/带时状态 + 物理骰子盘与骰子请求接口
+
+- host: combat.start（自动掷先攻，同名地图单位与角色卡自动合并）/ next（跨轮 +1、重置行动经济、带时状态递减）/
+  economy / conditions（支持 rounds）/ damage（同步地图单位与角色卡并记账）/ end；id 或名字或 tokenId 或 pcId 都能查找
+- host: dice.request（弹出玩家投掷提示）/ pending / answer（写战斗记录 + DC 成败判定）/ results / clear
+- client: 「先攻」面板（先攻条、HP 条、状态剩余回合、行动经济小标、选中操作区）
+- client: 「骰子」面板 —— canvas 物理骰盘（重力/墙面回弹/骰间碰撞/角速度翻滚，落稳揭晓），
+  玩具模式不记账不统计；AI 请求模式点一下即投并回写结果
+- tools.list 与 JSON Schema 登记 combat.* / dice.*；系统提示补充战斗流程，并明确「玩家的骰子必须走 dice.request」
+- test: smoke 增加骰池→骰式拼装断言与两个新面板渲染；修掉先攻条行类名与被选统计的角色行冲突
