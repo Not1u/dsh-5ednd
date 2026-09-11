@@ -1,4 +1,4 @@
-// v19 client — 战术地图（5尺格 / 地形 / 可拖动单位 / 测距 / 速度范围）+ 战斗记录 + 骰子
+// v20 client — 战术地图（5尺格 / 地形 / 可拖动单位 / 测距 / 速度范围）+ 战斗记录 + 骰子
 const h = React.createElement
 // —— 统一传输层：优先走同源 HTTP 桥（profile 常驻插件 /dnd5e/api，可直接落盘），
 //    不可用时回退动态插件的 host.call。
@@ -193,6 +193,24 @@ const css = `
 .dndp-mapfill .dndp-mapwrap{flex:1;min-height:0;max-height:none}
 .dndp-fill{display:flex;flex-direction:column;height:100%;min-height:0}
 .dndp-fill>.dndp-scroll{flex:1;min-height:0}
+/* ===== AI 对话 / 设置 ===== */
+.dndp-ai{display:flex;flex-direction:column;height:100%;min-height:0}
+.dndp-aibar{flex:none;display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:6px 10px;border-bottom:1px solid var(--dsw-alias-border-l1);font-size:12px}
+.dndp-aibody{flex:1;min-height:0;overflow:auto;padding:10px;display:flex;flex-direction:column;gap:9px}
+.dndp-msg{display:flex;flex-direction:column;gap:4px;max-width:96%}
+.dndp-msg.me{align-self:flex-end;align-items:flex-end}
+.dndp-who{font-size:11px;color:var(--dsw-alias-label-secondary)}
+.dndp-bubble{padding:7px 10px;border-radius:10px;background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);white-space:pre-wrap;word-break:break-word;line-height:1.6}
+.dndp-msg.me .dndp-bubble{background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-bg-base);border-color:transparent}
+.dndp-msg.err .dndp-bubble{border-color:var(--dsw-alias-state-error-primary);color:var(--dsw-alias-state-error-primary)}
+.dndp-steps{border:1px dashed var(--dsw-alias-border-l2);border-radius:8px;padding:5px 8px;font-size:11px;color:var(--dsw-alias-label-secondary)}
+.dndp-steps b{color:var(--dsw-alias-label-primary)}
+.dndp-aiinput{flex:none;display:flex;gap:7px;padding:8px 10px;border-top:1px solid var(--dsw-alias-border-l1);align-items:flex-end}
+.dndp-aiinput textarea{flex:1;min-height:38px;max-height:140px;resize:vertical;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-primary);border-radius:8px;padding:7px 9px;font-size:13px;font-family:inherit}
+.dndp-setrow{display:flex;flex-direction:column;gap:4px;margin-bottom:9px}
+.dndp-setrow label{font-size:12px;color:var(--dsw-alias-label-secondary)}
+.dndp-setrow .hint{font-size:11px;color:var(--dsw-alias-label-secondary)}
+.dndp-warn{font-size:11px;color:#d9a03a;border:1px dashed #d9a03a66;border-radius:8px;padding:6px 8px;margin-bottom:9px}
 `
 const AB = ['str', 'dex', 'con', 'int', 'wis', 'cha']
 const ABF = { str: '力量', dex: '敏捷', con: '体质', int: '智力', wis: '感知', cha: '魅力' }
@@ -1081,12 +1099,12 @@ const WS_SLOTS = [['left', '左栏'], ['center', '中栏'], ['right', '右栏'],
 const DEFAULT_LAYOUT = {
   version: 1,
   slots: {
-    left: { size: 240, panels: ['roster'] },
+    left: { size: 230, panels: ['roster'] },
     center: { size: 0, panels: ['map', 'sheet'] },
-    right: { size: 380, panels: ['log'] },
+    right: { size: 420, panels: ['ai', 'log'] },
     bottom: { size: 0, panels: [] },
   },
-  weights: { left: [1], center: [3, 2], right: [1], bottom: [] },
+  weights: { left: [1], center: [3, 2], right: [3, 2], bottom: [] },
   collapsed: [], maximized: null, activeSheet: null,
 }
 const PANEL_DEFS = {
@@ -1094,6 +1112,8 @@ const PANEL_DEFS = {
   sheet: { title: '角色卡', icon: '📋' },
   map: { title: '战术地图', icon: '🗺' },
   log: { title: '战斗记录', icon: '🎲' },
+  ai: { title: 'AI 对话', icon: '💬' },
+  settings: { title: '设置', icon: '⚙' },
   rules: { title: '规则速查', icon: '📖' },
   builder: { title: '新建角色', icon: '➕' },
   stats: { title: '战况统计', icon: '📊' },
@@ -1199,6 +1219,7 @@ function Workspace() {
   const [layout, setLayout] = React.useState(null)
   const [activeId, setActiveId] = React.useState(null)
   const [party, setParty] = React.useState([])
+  const [toolCount, setToolCount] = React.useState(null)
   const [rev, setRev] = React.useState(0)
   const [menu, setMenu] = React.useState(false)
   const [msg, setMsg] = React.useState('')
@@ -1216,6 +1237,9 @@ function Workspace() {
   React.useEffect(() => {
     call('party.list', {}).then(r => { if (r && r.ok) setParty(r.items || []) }).catch(() => { })
   }, [rev])
+  React.useEffect(() => {
+    call('ai.tools', {}).then(r => { if (r && r.ok) setToolCount(r.count) }).catch(() => { })
+  }, [])
 
   const commit = (next, opts) => {
     setLayout(next)
@@ -1231,7 +1255,7 @@ function Workspace() {
   const openPanel = (pid) => {
     const n = cloneLayout(layout)
     if (inLayout(n, pid)) { for (const [k] of WS_SLOTS) if (n.slots[k].panels.indexOf(pid) >= 0) n.collapsed = n.collapsed.filter(x => x !== pid); commit(n); return }
-    const slot = pid === 'map' ? 'center' : (pid === 'builder' || pid === 'rules' || pid === 'stats' ? 'right' : 'left')
+    const slot = pid === 'map' ? 'center' : (pid === 'builder' || pid === 'rules' || pid === 'stats' || pid === 'settings' ? 'right' : 'left')
     n.slots[slot].panels.push(pid)
     n.weights[slot] = n.slots[slot].panels.map(() => 1)
     commit(n)
@@ -1325,6 +1349,8 @@ function Workspace() {
       if (pid === 'sheet') return h(SheetHost, { activeId: activeId, rev: rev, onReload: () => setRev(r => r + 1) })
       if (pid === 'map') return h(MapPanel, { bare: true })
       if (pid === 'log') return h(LogView, { bare: true, party: party, onBack: null })
+      if (pid === 'ai') return h(AIPanel, { onOpen: openPanel })
+      if (pid === 'settings') return h(SettingsPanel, { toolCount: toolCount })
       if (pid === 'rules') return h('div', { style: { padding: '10px 12px' } }, h(RulesPanel, {}))
       if (pid === 'stats') return h(StatsPanel, {})
       if (pid === 'builder') return h(Wizard, { onDone: () => { setRev(r => r + 1); closePanel('builder') }, onBack: () => closePanel('builder') })
@@ -1389,6 +1415,117 @@ function Workspace() {
         mainRow,
         bottomH ? h('div', { className: 'dndp-ws-split h', onPointerDown: startDrag('bottom', 'bottom') }) : null,
         bottomH ? h('div', { className: 'dndp-ws-col', style: { height: bottomH, flex: 'none', padding: 4 } }, col('bottom')) : null)))
+}
+
+function SettingsPanel(props) {
+  const [st, setSt] = React.useState(null)
+  const [f, setF] = React.useState({ baseUrl: '', model: '', temperature: '0.7', maxSteps: '6', extraPrompt: '' })
+  const [key, setKey] = React.useState('')
+  const [msg, setMsg] = React.useState('')
+  const [busy, setBusy] = React.useState(false)
+  const load = () => call('settings.get', {}).then(r => {
+    if (!r || !r.ok) { setMsg((r && r.error) || '读取设置失败'); return }
+    setSt(r)
+    setF({ baseUrl: r.config.baseUrl || '', model: r.config.model || '', temperature: String(r.config.temperature), maxSteps: String(r.config.maxSteps), extraPrompt: r.config.extraPrompt || '' })
+  }).catch(e => setMsg(String(e && e.message || e)))
+  React.useEffect(() => { load() }, [])
+  const save = async () => {
+    setBusy(true); setMsg('')
+    const patch = { baseUrl: f.baseUrl, model: f.model, temperature: f.temperature, maxSteps: f.maxSteps, extraPrompt: f.extraPrompt }
+    if (key) patch.apiKey = key
+    const r = await call('settings.set', { patch: patch })
+    setMsg(r && r.ok ? (r.summary + (r.saved ? '' : '（未落盘：' + (r.saveError || '') + '）')) : ((r && r.error) || '保存失败'))
+    setKey('')
+    setBusy(false)
+    load()
+  }
+  const test = async () => { setBusy(true); setMsg('测试中…'); const r = await call('ai.test', {}); setMsg(r && r.ok ? r.summary : ('测试失败：' + ((r && r.error) || '') + (r && r.detail ? ('\n' + r.detail) : ''))); setBusy(false) }
+  const clearKey = async () => { const r = await call('settings.set', { patch: { clearKey: true } }); setMsg(r && r.ok ? '密钥已清除' : '清除失败'); load() }
+  if (!st) return h('div', { className: 'dndp-empty' }, msg || '读取设置…')
+  const row = (label, hint, node) => h('div', { key: label, className: 'dndp-setrow' }, h('label', null, label), node, hint ? h('div', { className: 'hint' }, hint) : null)
+  return h('div', { style: { padding: '10px 12px' } },
+    h('div', { key: 'w', className: 'dndp-warn' }, '密钥以明文保存在 ' + st.path + '（本机文件）。也可以用环境变量 DND5E_AI_KEY 覆盖' + (st.keyFromEnv ? '（当前正由环境变量提供）' : '') + '。不要把该文件提交到公开仓库。'),
+    row('API Base URL', '兼容 OpenAI 的 /chat/completions；末尾不用带 /。快捷：' + Object.keys(st.presets).join(' / '),
+      h('div', { key: 'u' }, h('input', { className: 'dndp-input', value: f.baseUrl, onChange: e => setF(Object.assign({}, f, { baseUrl: e.target.value })) }),
+        h('div', { className: 'dndp-chips', style: { marginTop: 4 } }, Object.keys(st.presets).map(k => h('button', { key: k, className: 'dndp-btn tiny', onClick: () => setF(Object.assign({}, f, { baseUrl: st.presets[k] })) }, k))))),
+    row('API Key', st.hasKey ? ('当前：' + st.keyMask) : '还没有配置密钥', h('input', { className: 'dndp-input', type: 'password', value: key, placeholder: st.hasKey ? '（留空则不修改）' : 'sk-…', onChange: e => setKey(e.target.value) })),
+    row('模型', '例如 gpt-4o-mini / deepseek-chat / qwen2.5:14b', h('input', { className: 'dndp-input', value: f.model, onChange: e => setF(Object.assign({}, f, { model: e.target.value })) })),
+    h('div', { key: 'two', style: { display: 'flex', gap: 8 } },
+      h('div', { style: { flex: 1 } }, row('温度', null, h('input', { className: 'dndp-input', value: f.temperature, onChange: e => setF(Object.assign({}, f, { temperature: e.target.value })) }))),
+      h('div', { style: { flex: 1 } }, row('每轮最多工具步数', null, h('input', { className: 'dndp-input', value: f.maxSteps, onChange: e => setF(Object.assign({}, f, { maxSteps: e.target.value })) })))),
+    row('补充指令（追加到 DM 系统提示之后）', '例如：叙事更简洁，每次回复不超过 200 字；遇到战斗先确认先攻。', h('textarea', { className: 'dndp-input', rows: 4, value: f.extraPrompt, onChange: e => setF(Object.assign({}, f, { extraPrompt: e.target.value })) })),
+    h('div', { key: 'btns', style: { display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 } },
+      h('button', { className: 'dndp-btn primary', disabled: busy, onClick: save }, '保存'),
+      h('button', { className: 'dndp-btn', disabled: busy, onClick: test }, '测试连接'),
+      h('button', { className: 'dndp-btn', disabled: busy || !st.hasKey, onClick: clearKey }, '清除密钥')),
+    msg ? h('div', { key: 'm', className: 'dndp-note hl', style: { marginTop: 8, whiteSpace: 'pre-wrap' } }, msg) : null,
+    h('div', { key: 'tools', className: 'dndp-note', style: { marginTop: 10 } },
+      'AI 能调用的能力：' + (props.toolCount != null ? props.toolCount : '—') + ' 个（规则书检索、模组检索、怪物数值、角色卡读写、战斗记录、战术地图、掷骰，以及 plugins/ 里的扩展）。'))
+}
+
+function AIPanel(props) {
+  const [msgs, setMsgs] = React.useState([])
+  const [input, setInput] = React.useState('')
+  const [busy, setBusy] = React.useState(false)
+  const [msg, setMsg] = React.useState('')
+  const [st, setSt] = React.useState(null)
+  const [toolCount, setToolCount] = React.useState(null)
+  const bodyRef = React.useRef(null)
+  const load = () => call('ai.history', {}).then(r => { if (r && r.ok) setMsgs(r.messages || []) }).catch(() => { })
+  React.useEffect(() => {
+    load()
+    call('settings.get', {}).then(r => { if (r && r.ok) setSt(r) }).catch(() => { })
+    call('ai.tools', {}).then(r => { if (r && r.ok) setToolCount(r.count) }).catch(() => { })
+  }, [])
+  React.useEffect(() => { const el = bodyRef.current; if (el) el.scrollTop = el.scrollHeight })
+  const send = async (text) => {
+    const t = String(text == null ? input : text).trim()
+    if (!t || busy) return
+    setInput(''); setBusy(true); setMsg('')
+    setMsgs(m => m.concat([{ role: 'user', content: t, t: new Date().toISOString() }]))
+    try {
+      const r = await call('ai.chat', { message: t })
+      if (r && r.ok) {
+        const steps = (r.steps || []).map(s => '· ' + s.name + (s.ok ? ' ✔' : ' ✘') + (s.summary ? ('  ' + String(s.summary).slice(0, 60)) : '')).join('\n')
+        setMsgs(m => m.concat([{ role: 'assistant', content: r.reply, t: new Date().toISOString(), steps: steps, usage: r.usage }]))
+        setMsg(r.summary + (r.saved ? '' : '（未落盘）'))
+      } else {
+        setMsgs(m => m.concat([{ role: 'assistant', content: '⚠ ' + ((r && r.error) || '调用失败'), t: new Date().toISOString(), err: true }]))
+        setMsg('')
+      }
+    } catch (e) { setMsgs(m => m.concat([{ role: 'assistant', content: '⚠ ' + String(e && e.message || e), err: true }])) }
+    setBusy(false)
+    load()
+  }
+  const clear = async () => { const r = await call('ai.clear', {}); setMsg(r && r.ok ? '已清空' : '清空失败'); load() }
+  const quick = ['读取当前战役状态，并简短说明接下来该发生什么', '继续推进剧情（由我扮演图里尔，你先描述场景）', '把当前遭遇摆到战术地图上']
+  const bar = h('div', { className: 'dndp-aibar' },
+    h('span', { className: 'dndp-chip' }, st ? (st.config.model || '未设模型') : '…'),
+    h('span', { className: 'dndp-chip' }, st && st.hasKey ? ('密钥 ' + st.keyMask) : '⚠ 未配置密钥'),
+    h('span', { className: 'dndp-chip' }, '工具 ' + (toolCount == null ? '—' : toolCount)),
+    h('div', { className: 'dndp-sp' }),
+    h('button', { className: 'dndp-btn tiny', onClick: () => props.onOpen && props.onOpen('settings') }, '⚙ 设置'),
+    h('button', { className: 'dndp-btn tiny', onClick: load }, '刷新'),
+    h('button', { className: 'dndp-btn tiny', onClick: clear }, '清空'))
+  const list = []
+  if (!msgs.length) list.push(h('div', { key: 'z', className: 'dndp-note', style: { padding: '8px 2px' } },
+    'AI 会用工具自己查规则书/模组/角色卡/地图，并把结果落到战斗记录与地图上。先在「⚙ 设置」里填 API。试试下面的快捷指令：',
+    h('div', { className: 'dndp-chips', style: { marginTop: 6 } }, quick.map((q, i) => h('button', { key: i, className: 'dndp-btn tiny', onClick: () => send(q) }, q)))))
+  msgs.forEach((m, i) => {
+    const me = m.role === 'user'
+    list.push(h('div', { key: i, className: 'dndp-msg' + (me ? ' me' : '') + (m.err ? ' err' : '') },
+      h('div', { className: 'dndp-who' }, me ? '你' : 'DM' + (m.usage ? '（tokens ' + (m.usage.prompt_tokens || 0) + '+' + (m.usage.completion_tokens || 0) + '）' : '')),
+      h('div', { className: 'dndp-bubble' }, m.content),
+      m.steps ? h('div', { className: 'dndp-steps' }, h('b', null, '工具调用：'), '\n' + m.steps) : null))
+  })
+  if (busy) list.push(h('div', { key: 'b', className: 'dndp-msg' }, h('div', { className: 'dndp-who' }, 'DM'), h('div', { className: 'dndp-bubble' }, '正在思考（会先调用工具查资料）…')))
+  return h('div', { className: 'dndp-ai' },
+    bar,
+    h('div', { className: 'dndp-aibody', ref: bodyRef }, list),
+    msg ? h('div', { className: 'dndp-note hl', style: { padding: '2px 10px' } }, msg) : null,
+    h('div', { className: 'dndp-aiinput' },
+      h('textarea', { value: input, placeholder: '以玩家身份说点什么（Enter 发送，Shift+Enter 换行）', onChange: e => setInput(e.target.value), onKeyDown: e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } } }),
+      h('button', { className: 'dndp-btn primary', disabled: busy, onClick: () => send() }, busy ? '…' : '发送')))
 }
 
 function PartyView() {

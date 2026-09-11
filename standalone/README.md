@@ -35,6 +35,8 @@ exe 的行为：定位同目录的数据 → 起服务 → 等端口就绪 → �
 | 模块 | 说明 |
 |---|---|
 | **工作区** | 多面板 + 可拖拽分隔条 + 面板折叠/最大化 + 槽位移动（面板标题栏「⋯」）+ 顶部「面板 ▾」增删 + 一键重置布局 |
+| **AI 对话** | 内置 DM 对话面板：**AI 可以直接调用这座桥上的全部能力**（42 个：规则书检索、模组检索、怪物数值解析、角色卡读写、战斗记录、战术地图、掷骰，以及 `plugins/` 扩展）。它掷的骰子、改的血量、摆的地图会**真实落盘**，你侧栏立刻能看到。工具调用过程在气泡下方逐条列出。 |
+| **⚙ 设置** | 在这里填 API：Base URL（兼容 OpenAI 的 `/chat/completions`）+ API Key + 模型名，另有温度、每轮最大工具步数、补充指令；带「测试连接」和快捷 Base URL（openai / deepseek / moonshot / openrouter / ollama / lmstudio）。密钥写在 `data/ai.json`（也可用环境变量 `DND5E_AI_KEY` 覆盖）。 |
 | **角色** | 建卡向导（SRD 范围内、购点、种族/职业/子职/背景/法术/装备全流程）、角色卡详情、升级到任意等级（子职/专长/法术/兼职）、装备栏、背包（套装可展开、逐件取出）、状态栏、手动改数值 |
 | **🗺 战术地图** | 5 尺格网格、12 种地形（地面/岩壁/溪水·困难/荆棘·困难+半掩体/高地/洞口/门/木板/树/火堆/碎石/虚空）、可拖动单位（带 HP 血条）、拖动即折算距离并记账、点两格测距（5-10-5 规则 + 对角简化）、选中单位显示速度可达区、**自适应缩放**（格子自动填满面板，改窗口大小会重算）、导出 SVG |
 | **🎲 战斗记录** | 骰子栏（骰式/优势/劣势/按角色预设定制）、时间线（轮次/攻击/伤害/治疗/移动/状态分色）、轮次推进、自动刷新、按角色或类型筛选，落盘 `data/combat-log.json` |
@@ -42,6 +44,29 @@ exe 的行为：定位同目录的数据 → 起服务 → 等端口就绪 → �
 | **模组** | **624 条 / 37 本**（含凡戴尔失落矿坑与破碎方尖碑的图鉴与魔法物品）；`mod.statblock` 能把图鉴条目解析成 AC/HP/速度/六维/CR/动作的结构化数值 |
 | **战况统计** | 从战斗记录算每人攻击次数、命中率、重击、伤害、治疗、移动总尺数（示例插件） |
 | **扩展插件** | `plugins/*.mjs` 自动挂到同一座桥上：遭遇战统计、规则速查、**地图导出 SVG + 外置图像模型调用** |
+
+### AI 怎么接
+
+1. 右上角或 AI 面板里的 **「⚙ 设置」** → 填 **Base URL / API Key / 模型** → 保存 → 「测试连接」。
+   - OpenAI：`https://api.openai.com/v1`
+   - DeepSeek：`https://api.deepseek.com/v1`
+   - 本地：Ollama `http://127.0.0.1:11434/v1`、LM Studio `http://127.0.0.1:1234/v1`（本地模型不需要密钥）
+2. 回到 **💬 AI 对话** 面板说话即可。AI 每轮会自己决定调用哪些工具，工具调用过程显示在回复下方。
+
+AI 拿到的能力清单（`{"op":"ai.tools"}` 可查）：
+
+```
+角色：party.list / party.sheet / pc.apply / levelset.* / sheet.* / build.* …
+骰子：roll.dice（优势劣势、弃骰；会写入战斗记录）
+战斗记录：log.list / log.append / log.set
+地图：map.get / map.set / map.terrain.set / map.token.add|move|update|remove / map.measure
+规则书：rules.stats / rules.search / rules.read
+模组：mod.list / mod.search / mod.read / mod.statblock（图鉴 → AC/HP/六维/CR/动作）
+扩展：ext.encounter.stats / ext.rule.lookup / ext.image.map|list|provider|generate
+```
+
+系统提示里还会注入**当前真实状态**（战役与轮次、每人 HP 与状态与 id、地图名与全部单位坐标/HP），
+所以 AI 一开口就知道现在轮到谁、谁快死了、谁站在哪个格子。相关 op：`ai.chat`（支持 `dryRun`）、`ai.history`、`ai.clear`、`ai.test`、`ai.tools`。
 
 ### 工作区怎么用
 

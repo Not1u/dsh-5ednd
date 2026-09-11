@@ -64,6 +64,30 @@ const miniCtx = {
   logger: { info: (...a) => console.log('[solo-trpg]', ...a), warn: (...a) => console.warn('[solo-trpg]', ...a), error: (...a) => console.error('[solo-trpg]', ...a) },
 }
 
+// 插件的 api（也给引擎用：让 AI 能调用 plugins/*.mjs 的能力）
+const pluginApi = (overrides) => Object.assign({
+  repoRoot: ROOT,
+  call: async (op, args) => { ensureEngine(); const f = rec[op]; if (typeof f !== 'function') throw new Error('unknown op: ' + op); return f(args || {}) },
+  readJson: async (rel) => { let s = await fsp.readFile(path.join(ROOT, rel), 'utf8'); if (s.charCodeAt(0) === 0xfeff) s = s.slice(1); return JSON.parse(s) },
+  writeJson: async (rel, obj) => writeText(path.join(ROOT, rel), JSON.stringify(obj, null, 2)),
+  log: (m) => console.log('[plugin] ' + m),
+}, overrides || {})
+
+// 交给引擎的扩展访问器：AI 的工具列表里会带上插件能力
+const extApi = {
+  call: async (op, args) => {
+    const ext = await loadPlugins()
+    const fn = ext.ops[op]
+    if (typeof fn !== 'function') throw new Error('unknown ext op: ' + op)
+    return fn(args || {}, pluginApi())
+  },
+  list: () => {
+    const out = []
+    for (const c of pluginCache.values()) for (const n of Object.keys(c.ops || {})) out.push({ name: n, plugin: c.name, desc: '插件 ' + c.name })
+    return out
+  },
+}
+
 function ensureEngine() {
   if (!fs.existsSync(HOST_SRC)) throw new Error('引擎源码不存在：' + HOST_SRC + '（先跑 node tools/sync-from-repo.mjs）')
   const mt = fs.statSync(HOST_SRC).mtimeMs
@@ -73,8 +97,8 @@ function ensureEngine() {
   let src = fs.readFileSync(HOST_SRC, 'utf8')
   if (src.charCodeAt(0) === 0xfeff) src = src.slice(1)
   const harness = { handle: (n, f) => { rec[n] = f; return () => { delete rec[n] } } }
-  const factory = new Function('harness', 'ctx', 'console', 'DND5E_ROOT', 'DND5E_WRITE', src)
-  const plugin = factory(harness, miniCtx, console, ROOT, writeText)
+  const factory = new Function('harness', 'ctx', 'console', 'DND5E_ROOT', 'DND5E_WRITE', 'DND5E_EXT', src)
+  const plugin = factory(harness, miniCtx, console, ROOT, writeText, extApi)
   if (!plugin || typeof plugin.apply !== 'function') throw new Error('引擎形状不对')
   const d = plugin.apply(miniCtx)
   if (typeof d === 'function') innerDispose = d
@@ -89,13 +113,6 @@ async function loadPlugins() {
   const ops = {}, list = []
   let names = []
   try { names = fs.readdirSync(dir).filter((f) => /\.m?js$/.test(f) && !/^_/.test(f)) } catch (e) { return { ops, list } }
-  const pluginApi = (overrides) => Object.assign({
-    repoRoot: ROOT,
-    call: async (op, args) => { ensureEngine(); const f = rec[op]; if (typeof f !== 'function') throw new Error('unknown op: ' + op); return f(args || {}) },
-    readJson: async (rel) => { let s = await fsp.readFile(path.join(ROOT, rel), 'utf8'); if (s.charCodeAt(0) === 0xfeff) s = s.slice(1); return JSON.parse(s) },
-    writeJson: async (rel, obj) => writeText(path.join(ROOT, rel), JSON.stringify(obj, null, 2)),
-    log: (m) => console.log('[plugin] ' + m),
-  }, overrides || {})
   for (const n of names) {
     try {
       const full = path.join(dir, n)
@@ -197,6 +214,15 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 500, { ok: false, error: String((e && e.message) || e) })
   }
 })
+
+// 预热插件：让 AI 的工具列表一开始就包含 plugins/*.mjs 的能力
+async function warmPlugins() {
+  try {
+    const ext = await loadPlugins()
+    console.log('[solo-trpg] 插件已预热：' + ext.list.length + ' 个（' + ext.list.map(p => p.name).join('、') + '）')
+  } catch (e) { }
+}
+warmPlugins()
 
 server.listen(PORT, BIND, () => {
   console.log('')

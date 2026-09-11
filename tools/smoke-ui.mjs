@@ -69,6 +69,9 @@ const CANNED = {
   'rules.search': { ok: true, items: [{ id: 'r1', title: '战斗', book: '玩家手册', snippet: '…' }] },
   'ext.encounter.stats': { ok: true, rows: [{ actor: '图里尔', attacks: 3, hits: 1, hitRate: '33%', crits: 0, damage: 9, healed: 0, feet: 15 }] },
   'ext.image.map': { ok: true, summary: '已导出 data/images/map-test.svg' },
+  'ai.history': { ok: true, messages: [{ role: 'user', content: '我推门进去' }, { role: 'assistant', content: '门后是一间库房。', steps: '· log.append ✔' }], model: 'gpt-4o-mini' },
+  'ai.tools': { ok: true, count: 42 },
+  'settings.get': { ok: true, path: 'data/ai.json', config: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', temperature: 0.7, maxSteps: 6, extraPrompt: '' }, hasKey: true, keyMask: 'sk-••••abcd', presets: { openai: 'https://api.openai.com/v1', ollama: 'http://127.0.0.1:11434/v1' } },
   'build.options': { ok: true, races: [], classes: [], backgrounds: [], weapons: [], armor: [], packs: [] },
 }
 
@@ -130,7 +133,7 @@ function captureScope(code) {
   if (!code.includes(marker)) return code
   const names = ['Card', 'Pips', 'XpWidget', 'Sect', 'ChoiceBox', 'LevelSet', 'ManualEdit', 'StatusPanel', 'EquipPanel',
     'Bag', 'RulesPanel', 'Multiclass', 'Wizard', 'Detail', 'MapPanel', 'LogView', 'LogRow', 'DiceBar', 'PartyView',
-    'Workspace', 'Roster', 'SheetHost', 'StatsPanel', 'PanelFrame', 'PANEL_DEFS', 'DEFAULT_LAYOUT', 'normLayout',
+    'Workspace', 'Roster', 'SheetHost', 'StatsPanel', 'PanelFrame', 'AIPanel', 'SettingsPanel', 'PANEL_DEFS', 'DEFAULT_LAYOUT', 'normLayout',
     'slotOf', 'inLayout', 'cellDist', 'cloneLayout', 'TERRAIN', 'WS_SLOTS']
   return code.replace(marker, 'globalThis.__UI_SCOPE__ = { ' + names.join(', ') + ' }\n' + marker)
 }
@@ -242,6 +245,8 @@ tryRender('PanelFrame', { id: 'map', layout: scope.DEFAULT_LAYOUT, collapsed: fa
 tryRender('Wizard', {})
 tryRender('PartyView', {})
 tryRender('Workspace', {})
+tryRender('AIPanel', { onOpen() { } })
+tryRender('SettingsPanel', { toolCount: 42 })
 for (const t of tabs) { try { walk(t.component(), 0); rendered.push('页签 ' + t.title + ' ✔') } catch (e) { problems.push('页签 ' + t.title + ' 渲染异常：' + (e && e.message || e)) } }
 
 // ---------- 4) 深度：两遍渲染真工作区 ----------
@@ -271,20 +276,23 @@ async function deepWorkspace() {
   const titles = has('dndp-ptitle')
   const splitters = starts('dndp-ws-split')
   const roster = has('dndp-ritem')
+  const aiMsgs = has('dndp-bubble')
 
   deep.detail.push('地图格 ' + cells + '（期望 ' + (W * H) + '）')
   deep.detail.push('地图单位 ' + toks + '（期望 2）')
   deep.detail.push('战斗记录行 ' + rows + '（期望 3）')
   deep.detail.push('面板 ' + panels + ' 个，标题栏 ' + titles + ' 个，分隔条 ' + splitters + ' 条')
   deep.detail.push('角色列表项 ' + roster + '（期望 1）')
+  deep.detail.push('AI 对话气泡 ' + aiMsgs + '（期望 2）')
 
   const bad = []
   if (cells !== W * H) bad.push('地图格子数不符')
   if (toks !== 2) bad.push('地图单位数不符')
   if (rows !== 3) bad.push('战斗记录行数不符')
-  if (titles < 3) bad.push('默认布局应至少 3 个面板标题栏')
+  if (titles < 5) bad.push('默认布局应至少 5 个面板标题栏（含 AI 对话）')
+  if (aiMsgs !== 2) bad.push('AI 面板历史消息未渲染')
   if (splitters < 3) bad.push('分隔条数量不足')
-  if (!bad.length) notes.push('深度渲染：地图 ' + cells + ' 格 / ' + toks + ' 单位，记录 ' + rows + ' 行，面板 ' + panels + ' 个，分隔条 ' + splitters + ' 条')
+  if (!bad.length) notes.push('深度渲染：地图 ' + cells + ' 格 / ' + toks + ' 单位，记录 ' + rows + ' 行，AI 气泡 ' + aiMsgs + ' 个，面板 ' + panels + ' 个，分隔条 ' + splitters + ' 条')
   else { deep.ok = false; bad.forEach((b) => deep.detail.push('✘ ' + b)) }
 
   const calls = {}

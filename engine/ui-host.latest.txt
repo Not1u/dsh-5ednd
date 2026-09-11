@@ -42,6 +42,13 @@ const featMap = {}
 let srdCache = null, spellList = [], subData = null, featList = []
 return {
   apply(ctx) {
+    // 本地 op 注册表：harness.handle 注册过的处理器同时留一份在这里，
+    // 这样 AI 的工具调用（callAny）可以在引擎内部直接派发到自己注册的能力上。
+    const OPS = {}
+    if (harness && typeof harness.handle === 'function') {
+      const orig = harness.handle.bind(harness)
+      harness.handle = (n, f) => { OPS[n] = f; return orig(n, f) }
+    }
     const overlay = new Map()
     const callTool = async (name, args) => {
       try {
@@ -1139,7 +1146,7 @@ return {
       } catch (e) { return { ok: false, error: String(e && e.message || e) } }
     }))
     // 工具清单：让任何 agent / 宿主都能发现"这座桥上有什么能力"
-    unreg.push(harness.handle('tools.list', async () => {
+    const toolCatalog = () => {
       const T = (name, group, desc, args) => ({ name: name, group: group, desc: desc, args: args })
       const tools = [
         T('party.list', '角色', '列出全部角色（名字/职业/等级/HP）', {}),
@@ -1181,8 +1188,9 @@ return {
       ]
       const groups = {}
       tools.forEach(t => { groups[t.group] = (groups[t.group] || 0) + 1 })
-      return jclean({ ok: true, version: 'v18', count: tools.length, groups: groups, tools: tools, plugins: 'plugins/*.mjs 会被自动挂到同一座桥上，用 ext.list 枚举' })
-    }))
+      return { ok: true, version: 'v20', count: tools.length, groups: groups, tools: tools, plugins: 'plugins/*.mjs 会被自动挂到同一座桥上，用 ext.list 枚举' }
+    }
+    unreg.push(harness.handle('tools.list', async () => jclean(toolCatalog())))
     // ===== 工作区布局（IDE 式多面板：尺寸、折叠、槽位、最大化）=====
     const WS_PATH = ROOT + '/data/workspace.json'
     const DEFAULT_WS = {
@@ -1230,6 +1238,276 @@ return {
         if (typeof DND5E_WRITE === 'function') { try { const r = await DND5E_WRITE(WS_PATH, txt); saved = !!(r && r.ok) } catch (e) { } }
         if (!saved) { try { const fs = ctx.get('fs'); const t = await fs.resolve(WS_PATH); if (fs && typeof fs.writeText === 'function') { await fs.writeText(t, txt); saved = true } } catch (e) { } }
         return { ok: true, layout: DEFAULT_WS, saved: saved, summary: '布局已重置为默认' }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    // ===== AI（对话 + 工具调用）：AI 通过同一座桥读写全部能力 =====
+    const AI_PATH = ROOT + '/data/ai.json'
+    const EXT = (typeof DND5E_EXT === 'object' && DND5E_EXT) ? DND5E_EXT : null
+    const AI_DEFAULTS = {
+      baseUrl: 'https://api.openai.com/v1', apiKey: '', model: 'gpt-4o-mini', temperature: 0.7,
+      maxSteps: 6, maxToolChars: 4000, extraPrompt: '',
+    }
+    const readAi = async () => {
+      let j = null
+      try { j = JSON.parse(await fsRead(AI_PATH)) } catch (e) { }
+      const cfg = Object.assign({}, AI_DEFAULTS, (j && j.config) || {})
+      return { config: cfg, messages: (j && Array.isArray(j.messages)) ? j.messages : [] }
+    }
+    const writeAi = async (ai) => {
+      const txt = JSON.stringify({ config: ai.config, messages: (ai.messages || []).slice(-200) }, null, 2)
+      if (typeof DND5E_WRITE === 'function') { try { const r = await DND5E_WRITE(AI_PATH, txt); if (r && r.ok) return { ok: true } } catch (e) { } }
+      try { const fs = ctx.get('fs'); const t = await fs.resolve(AI_PATH); if (fs && typeof fs.writeText === 'function') { await fs.writeText(t, txt); return { ok: true } } } catch (e) { }
+      return { ok: false, error: '写入 data/ai.json 失败' }
+    }
+    const maskKey = (k) => { const s = String(k || ''); return s.length <= 8 ? (s ? '••••' : '') : (s.slice(0, 3) + '••••' + s.slice(-4)) }
+    const aiKeyOf = (cfg) => (process.env.DND5E_AI_KEY || (cfg && cfg.apiKey) || '')
+    const callAny = async (op, args) => {
+      const fn = OPS[op]
+      if (typeof fn === 'function') return await fn(args || {})
+      if (EXT && typeof EXT.call === 'function') return await EXT.call(op, args || {})
+      throw new Error('未知能力：' + op)
+    }
+    // 给模型看的 JSON Schema（关键工具精确描述，其余用宽松 schema + 描述里的示例）
+    const TOOL_SCHEMA = {
+      'party.list': { type: 'object', properties: {}, additionalProperties: false },
+      'party.sheet': { type: 'object', properties: { id: { type: 'string', description: '角色 id' } }, required: ['id'], additionalProperties: false },
+      'pc.apply': {
+        type: 'object', additionalProperties: false,
+        properties: {
+          id: { type: 'string' }, hp: { type: 'number', description: 'HP 增量，负数=受伤' }, hpSet: { type: 'number' }, temp: { type: 'number' },
+          xp: { type: 'number', description: '经验增量' }, hpMax: { type: 'number' },
+          conditions: { type: 'object', properties: { add: { type: 'array', items: { type: 'object', additionalProperties: true, properties: { key: { type: 'string' }, name: { type: 'string' }, level: { type: 'number' }, note: { type: 'string' } } } }, remove: { type: 'array', items: { type: 'string' } } } },
+          items: { type: 'object', properties: { add: { type: 'array', items: { type: 'object', additionalProperties: true, properties: { key: { type: 'string' }, name: { type: 'string' }, kind: { type: 'string' }, qty: { type: 'number' }, damage: { type: 'string' }, dmgType: { type: 'string' }, acBonus: { type: 'number' } } } }, remove: { type: 'array', items: { type: 'string' } } } },
+          currency: { type: 'object', properties: { gp: { type: 'number' }, sp: { type: 'number' }, cp: { type: 'number' } } },
+          log: { type: 'string', description: '同时写入战斗记录的一句话' }, logKind: { type: 'string', enum: ['state', 'heal', 'damage', 'narrate'] }, note: { type: 'string' },
+        }, required: ['id'],
+      },
+      'roll.dice': { type: 'object', additionalProperties: false, properties: { expr: { type: 'string', description: '如 1d20+5、2d6+3、4d6dl1' }, advantage: { type: 'string', enum: ['normal', 'adv', 'dis'] }, actor: { type: 'string' }, label: { type: 'string' }, kind: { type: 'string', enum: ['roll', 'attack', 'damage', 'heal'] } }, required: ['expr'] },
+      'log.list': { type: 'object', additionalProperties: false, properties: { limit: { type: 'number' } } },
+      'log.append': { type: 'object', additionalProperties: false, properties: { entries: { type: 'array', items: { type: 'object', additionalProperties: true, properties: { kind: { type: 'string', enum: ['turn', 'narrate', 'attack', 'damage', 'heal', 'state', 'move', 'down'] }, actor: { type: 'string' }, text: { type: 'string' }, detail: { type: 'string' } } } }, round: { type: 'number' } }, required: ['entries'] },
+      'log.set': { type: 'object', additionalProperties: false, properties: { campaign: { type: 'string' }, round: { type: 'number' } } },
+      'map.get': { type: 'object', properties: {}, additionalProperties: false },
+      'map.set': {
+        type: 'object', additionalProperties: true,
+        properties: {
+          name: { type: 'string' },
+          w: { type: 'number' }, h: { type: 'number' },
+          terrain: { type: 'array', items: { type: 'string' }, description: 'h 行、每行 w 个字符。. 地面 # 岩壁 ~ 溪水(困难) , 荆棘(困难+半掩体) ^ 高地 o 洞口 + 门 = 木板 T 树 ! 火堆 x 碎石 (空格) 虚空' },
+          tokens: { type: 'array', items: { type: 'object', additionalProperties: true, properties: { id: { type: 'string' }, name: { type: 'string' }, kind: { type: 'string', enum: ['pc', 'enemy', 'ally', 'object'] }, x: { type: 'number' }, y: { type: 'number' }, hp: { type: 'number' }, max: { type: 'number' }, speed: { type: 'number' }, note: { type: 'string' } } } },
+        },
+      },
+      'map.terrain.set': { type: 'object', additionalProperties: true, properties: { cells: { type: 'array', items: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' }, t: { type: 'string' } }, required: ['x', 'y', 't'] } }, terrain: { type: 'array', items: { type: 'string' } }, y: { type: 'number' } } },
+      'map.token.add': { type: 'object', additionalProperties: true, properties: { token: { type: 'object', additionalProperties: true, properties: { name: { type: 'string' }, kind: { type: 'string' }, x: { type: 'number' }, y: { type: 'number' }, hp: { type: 'number' }, max: { type: 'number' }, speed: { type: 'number' }, note: { type: 'string' }, color: { type: 'string' } } } }, required: ['token'] },
+      'map.token.move': { type: 'object', additionalProperties: false, properties: { id: { type: 'string', description: '单位 id 或名字' }, x: { type: 'number' }, y: { type: 'number' }, log: { type: 'boolean' } }, required: ['id', 'x', 'y'] },
+      'map.token.update': { type: 'object', additionalProperties: true, properties: { id: { type: 'string' }, patch: { type: 'object', additionalProperties: true, properties: { hp: { type: 'number' }, note: { type: 'string' }, name: { type: 'string' }, kind: { type: 'string' }, color: { type: 'string' }, speed: { type: 'number' } } } }, required: ['id'] },
+      'map.token.remove': { type: 'object', additionalProperties: false, properties: { id: { type: 'string' } }, required: ['id'] },
+      'map.measure': { type: 'object', additionalProperties: false, properties: { from: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'] }, to: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'] } }, required: ['from', 'to'] },
+      'rules.search': { type: 'object', additionalProperties: false, properties: { query: { type: 'string', description: '空格分隔的关键词，AND 关系' }, book: { type: 'string' }, limit: { type: 'number' } }, required: ['query'] },
+      'rules.read': { type: 'object', additionalProperties: false, properties: { id: { type: 'string', description: '来自 rules.search 的 id' } }, required: ['id'] },
+      'mod.list': { type: 'object', additionalProperties: false, properties: { query: { type: 'string' } } },
+      'mod.search': { type: 'object', additionalProperties: false, properties: { query: { type: 'string' }, module: { type: 'string' }, all: { type: 'boolean' }, limit: { type: 'number' } }, required: ['query'] },
+      'mod.read': { type: 'object', additionalProperties: false, properties: { id: { type: 'string' }, title: { type: 'string' }, chars: { type: 'number' } } },
+      'mod.statblock': { type: 'object', additionalProperties: false, properties: { title: { type: 'string' }, id: { type: 'string' }, query: { type: 'string' } } },
+      'tools.list': { type: 'object', properties: {}, additionalProperties: false },
+    }
+    const buildToolSpecs = () => {
+      const cat = toolCatalog()
+      const out = []
+      for (const t of cat.tools) {
+        out.push({
+          type: 'function',
+          function: {
+            name: t.name.replace(/[^A-Za-z0-9_]/g, '_'),
+            description: '[' + t.group + '] ' + t.desc + (Object.keys(t.args || {}).length ? ('｜示例参数：' + JSON.stringify(t.args)) : ''),
+            parameters: TOOL_SCHEMA[t.name] || { type: 'object', additionalProperties: true, properties: {}, description: '参数示例：' + JSON.stringify(t.args || {}) },
+          },
+        })
+      }
+      if (EXT && typeof EXT.list === 'function') {
+        for (const p of (EXT.list() || [])) {
+          out.push({ type: 'function', function: { name: p.name.replace(/[^A-Za-z0-9_]/g, '_'), description: '[扩展插件' + (p.plugin ? '·' + p.plugin : '') + '] ' + (p.desc || '插件能力'), parameters: { type: 'object', additionalProperties: true, properties: {} } } })
+        }
+      }
+      return out
+    }
+    const safeName = (n) => String(n).replace(/[^A-Za-z0-9_]/g, '_')
+    // 模型看到的函数名是净化过的（roll.dice → roll_dice），派发前映射回真实 op 名
+    const opForName = (fnName) => {
+      const cat = toolCatalog()
+      for (const t of cat.tools) if (safeName(t.name) === fnName) return t.name
+      if (EXT && typeof EXT.list === 'function') for (const p of (EXT.list() || [])) if (safeName(p.name) === fnName) return p.name
+      return fnName
+    }
+    const NAME_TO_OP = () => { const m = {}; buildToolSpecs().forEach(s => { m[s.function.name] = s.function.name }); return m }
+    const aiStatusLine = async () => {
+      const bits = []
+      try {
+        const log = await readLog()
+        bits.push('战役：' + (log.campaign || '未命名') + '｜轮次 R' + (log.round || 0) + '｜战斗记录 ' + log.entries.length + ' 条')
+      } catch (e) { }
+      try {
+        const srd = await loadSrd()
+        const fs2 = ctx.get('fs'); const dir = await fs2.resolve(CHAR_DIR)
+        const names = (typeof fs2.listDir === 'function') ? (await fs2.listDir(dir)).filter(e => /[.]json$/i.test(e.name)).map(e => e.name) : []
+        const rows = []
+        for (const n of names) {
+          try { const pc = JSON.parse(await fsRead(CHAR_DIR + '/' + n)); const cd = (pc.classes || []).map(c => (((srd.classes[c.class] || {}).name) || c.class) + c.level).join('/'); const conds = (pc.conditions || []).map(c => (typeof c === 'string' ? c : (c && (c.name || c.key)))).filter(Boolean); rows.push(pc.name + '(' + cd + ' HP ' + (pc.hp ? pc.hp.current + '/' + pc.hp.max : '?') + (conds.length ? ' 状态:' + conds.join(',') : '') + ' id=' + pc.id + ')') } catch (e) { }
+        }
+        if (rows.length) bits.push('队伍：' + rows.join('；'))
+      } catch (e) { }
+      try {
+        const map = await readMap()
+        bits.push('地图：' + (map.name || '无') + ' ' + map.w + '×' + map.h + ' 格（每格 5 尺）；单位：' + (map.tokens || []).map(t => t.name + '@' + cellName(t.x, t.y) + (t.hp != null ? ('(' + t.hp + '/' + (t.max || '?') + ')') : '')).join('、'))
+      } catch (e) { }
+      return bits.join('\n')
+    }
+    const aiSystemPrompt = (status, extra) => [
+      '你是《SoloTRPG》单人跑团的 DM（地下城主），使用 D&D 5e 规则。你通过工具读取本地资料并修改游戏状态。',
+      '',
+      '你会用到的能力（调用时参数要合法）：规则书检索与全文读取、模组列表/检索/正文、怪物数值解析（AC/HP/六维/CR/动作）、',
+      '角色卡读取与修改、战斗记录读写、战术地图（5 尺格）建图与单位移动、掷骰。',
+      '',
+      '铁律：',
+      '1) 涉及规则条文、怪物数值、模组内容、角色状态、地图位置时，先调用工具拿事实，不要凭记忆编造。',
+      '2) 一切掷骰都用 roll.dice（优势 adv / 劣势 dis），不要自己编数字；关键结果用 log.append 写进战斗记录。',
+      '3) 伤害/治疗/状态变化用 pc.apply（hp 用增量，log 写一句说明）；地图上的移动用 map.token.move。',
+      '4) 需要摆场景时用 map.set / map.token.add 把地形与单位放到地图上，玩家就能在侧栏直接看到并拖动。',
+      '5) 叙事用中文，简洁有画面感。推进到需要玩家做决定的地方就停下，把选择交给玩家，不要替玩家决定行动。',
+      '6) 玩家操纵的角色由玩家说了算；NPC 与怪物由你代为行动与判定。',
+      extra ? '\n补充指令（来自玩家设置）：' + extra : '',
+      '',
+      '当前真实状态：',
+      status,
+    ].join('\n')
+
+    unreg.push(harness.handle('settings.get', async () => {
+      try {
+        const ai = await readAi()
+        const cfg = ai.config
+        return jclean({
+          ok: true, path: AI_PATH,
+          config: { baseUrl: cfg.baseUrl, model: cfg.model, temperature: cfg.temperature, maxSteps: cfg.maxSteps, extraPrompt: cfg.extraPrompt || '' },
+          hasKey: !!aiKeyOf(cfg), keyMask: maskKey(aiKeyOf(cfg)), keyFromEnv: !!(process.env.DND5E_AI_KEY),
+          messages: (ai.messages || []).length,
+          presets: {
+            openai: 'https://api.openai.com/v1', deepseek: 'https://api.deepseek.com/v1', moonshot: 'https://api.moonshot.cn/v1',
+            openrouter: 'https://openrouter.ai/api/v1', ollama: 'http://127.0.0.1:11434/v1', lmstudio: 'http://127.0.0.1:1234/v1',
+          },
+        })
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('settings.set', async (args) => {
+      try {
+        const a = args || {}
+        const ai = await readAi()
+        const p = a.patch || a
+        for (const k of ['baseUrl', 'model', 'extraPrompt']) if (p[k] != null) ai.config[k] = String(p[k]).trim()
+        if (p.temperature != null && p.temperature !== '') ai.config.temperature = Math.max(0, Math.min(2, Number(p.temperature)))
+        if (p.maxSteps != null && p.maxSteps !== '') ai.config.maxSteps = Math.max(1, Math.min(20, Number(p.maxSteps)))
+        if (p.apiKey != null && p.apiKey !== '') ai.config.apiKey = String(p.apiKey).trim()
+        if (p.clearKey) ai.config.apiKey = ''
+        if (ai.config.baseUrl) ai.config.baseUrl = ai.config.baseUrl.replace(/\/+$/, '')
+        const r = await writeAi(ai)
+        return jclean({ ok: true, saved: !!r.ok, saveError: r.error || '', hasKey: !!aiKeyOf(ai.config), keyMask: maskKey(aiKeyOf(ai.config)), summary: '已保存（模型 ' + ai.config.model + (aiKeyOf(ai.config) ? '，密钥 ' + maskKey(aiKeyOf(ai.config)) : '，未配置密钥') + '）' })
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('ai.test', async () => {
+      try {
+        const ai = await readAi()
+        const key = aiKeyOf(ai.config)
+        const url = (ai.config.baseUrl || '').replace(/\/+$/, '') + '/models'
+        const t0 = Date.now()
+        let res, body
+        try {
+          res = await fetch(url, { headers: key ? { authorization: 'Bearer ' + key } : {} })
+          body = await res.text()
+        } catch (e) { return { ok: false, error: '连接失败：' + (e && e.message || e), url: url } }
+        const ms = Date.now() - t0
+        if (!res.ok) return { ok: false, error: 'HTTP ' + res.status, detail: String(body).slice(0, 300), url: url, ms: ms }
+        let ids = []
+        try { const j = JSON.parse(body); ids = (j.data || []).map(x => x.id).slice(0, 8) } catch (e) { }
+        return { ok: true, url: url, ms: ms, models: ids, hasKey: !!key, summary: '连接正常（' + ms + 'ms）' + (ids.length ? '，可用模型示例：' + ids.join('、') : '') }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('ai.history', async () => {
+      try { const ai = await readAi(); return { ok: true, messages: ai.messages || [], model: ai.config.model } }
+      catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('ai.clear', async () => {
+      try { const ai = await readAi(); ai.messages = []; const r = await writeAi(ai); return { ok: true, saved: !!r.ok, summary: '对话已清空' } }
+      catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('ai.tools', async () => {
+      try {
+        const specs = buildToolSpecs()
+        return { ok: true, count: specs.length, tools: specs.map(s => ({ name: s.function.name, desc: s.function.description.slice(0, 120) })), summary: 'AI 可调用 ' + specs.length + ' 个能力' }
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('ai.chat', async (args) => {
+      try {
+        const a = args || {}
+        const ai = await readAi()
+        const cfg = ai.config
+        const key = aiKeyOf(cfg)
+        if (!cfg.baseUrl) return { ok: false, error: '还没配置 API 地址：打开「⚙ 设置」面板填 Base URL 与模型' }
+        if (a.dryRun) {
+          const specs = buildToolSpecs()
+          const status = await aiStatusLine()
+          return { ok: true, dryRun: true, tools: specs.length, system: aiSystemPrompt(status, cfg.extraPrompt), status: status, summary: '干跑：' + specs.length + ' 个工具，系统提示 ' + aiSystemPrompt(status, cfg.extraPrompt).length + ' 字' }
+        }
+        if (a.message) ai.messages.push({ role: 'user', content: String(a.message), t: nowIso() })
+        const status = await aiStatusLine()
+        const msgs = [{ role: 'system', content: aiSystemPrompt(status, cfg.extraPrompt) }]
+        for (const m of ai.messages.slice(-40)) msgs.push({ role: m.role, content: m.content })
+        const tools = buildToolSpecs()
+        const steps = []
+        let totalUsage = { prompt_tokens: 0, completion_tokens: 0 }
+        let reply = ''
+        let finish = ''
+        const maxSteps = Math.max(1, Math.min(20, Number(a.maxSteps) || cfg.maxSteps || 6))
+        const url = cfg.baseUrl.replace(/\/+$/, '') + '/chat/completions'
+        for (let step = 0; step < maxSteps; step++) {
+          const body = { model: cfg.model, messages: msgs, temperature: cfg.temperature, tools: tools, tool_choice: 'auto' }
+          let res, data
+          try {
+            res = await fetch(url, { method: 'POST', headers: Object.assign({ 'content-type': 'application/json' }, key ? { authorization: 'Bearer ' + key } : {}), body: JSON.stringify(body) })
+            data = await res.json()
+          } catch (e) { return { ok: false, error: '请求失败：' + (e && e.message || e), url: url, steps: steps, reply: reply } }
+          if (!res.ok || !data || data.error) {
+            return { ok: false, error: 'HTTP ' + res.status + '：' + ((data && data.error && (data.error.message || JSON.stringify(data.error))) || '未知错误'), url: url, steps: steps, reply: reply }
+          }
+          if (data.usage) { totalUsage.prompt_tokens += Number(data.usage.prompt_tokens) || 0; totalUsage.completion_tokens += Number(data.usage.completion_tokens) || 0 }
+          const choice = (data.choices || [])[0] || {}
+          const m = choice.message || {}
+          finish = choice.finish_reason || ''
+          if (m.content) reply += (reply ? '\n' : '') + String(m.content)
+          msgs.push(m)
+          const calls = m.tool_calls || []
+          if (!calls.length) break
+          for (const c of calls) {
+            const fnName = (c.function && c.function.name) || ''
+            const opName = opForName(fnName)
+            let fnArgs = {}
+            try { fnArgs = c.function && c.function.arguments ? JSON.parse(c.function.arguments) : {} } catch (e) { fnArgs = { _parseError: String(e && e.message || e) } }
+            let out, okAll = true
+            try {
+              out = await callAny(opName, fnArgs)
+              if (out && out.ok === false) okAll = false
+            } catch (e) { out = { ok: false, error: String(e && e.message || e) }; okAll = false }
+            const compact = JSON.stringify(out)
+            const clipped = compact.length > (cfg.maxToolChars || 4000) ? (compact.slice(0, cfg.maxToolChars || 4000) + '…（已截断）') : compact
+            steps.push({ name: opName, args: fnArgs, ok: okAll, summary: (out && (out.summary || out.error)) || '', chars: compact.length })
+            msgs.push({ role: 'tool', tool_call_id: c.id, content: clipped })
+          }
+        }
+        if (reply) ai.messages.push({ role: 'assistant', content: reply, t: nowIso(), steps: steps.map(s => s.name) })
+        else if (steps.length) ai.messages.push({ role: 'assistant', content: '（只调用了工具，没有输出文本：' + steps.map(s => s.name).join('、') + '）', t: nowIso() })
+        const w = await writeAi(ai)
+        return jclean({
+          ok: true, reply: reply || '（模型没有返回文本）', steps: steps, finish: finish, model: cfg.model,
+          usage: totalUsage, saved: !!w.ok, saveError: w.error || '',
+          summary: 'AI 回复 ' + reply.length + ' 字｜工具调用 ' + steps.length + ' 次' + (totalUsage.prompt_tokens ? ('｜tokens ' + totalUsage.prompt_tokens + '+' + totalUsage.completion_tokens) : ''),
+        })
       } catch (e) { return { ok: false, error: String(e && e.message || e) } }
     }))
     return () => { unreg.forEach(f => f()) }
