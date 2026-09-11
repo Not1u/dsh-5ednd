@@ -1006,6 +1006,7 @@ function MapPanel(props) {
     h('input', { type: 'range', min: 16, max: 60, value: tile, onChange: e => setTile(Number(e.target.value)), style: { width: 92 } }),
     h('span', { className: 'dndp-note' }, tile + 'px'),
     h('button', { className: 'dndp-btn tiny', onClick: load }, '刷新'),
+    h('button', { className: 'dndp-btn tiny', onClick: async () => { setMsg('导出中…'); const r = await call('ext.image.map', {}); setMsg(r && r.ok ? r.summary : ('导出失败：' + ((r && r.error) || '需要重启 DSH 以加载 plugins/')) ) } }, '⬇ 导出图片'),
     props.onToggleFull ? h('button', { className: 'dndp-btn tiny', onClick: props.onToggleFull }, props.full ? '退出全屏' : '⤢ 全屏') : null)
   const legend = h('div', { className: 'dndp-legend' }, h('span', null, '图例：'), (map.legend || Object.keys(TERRAIN).map(k => [k, TERRAIN[k].n])).map((L, i) => h('span', { key: i }, h('span', { className: 'sw g-' + ((TERRAIN[L[0]] || {}).k || 'void') }), L[1])))
   const body = [tools, h('div', { key: 'm', style: { padding: '0 10px 10px' } }, h('div', { className: 'dndp-mapwrap', style: { maxHeight: props.full ? 'none' : 420 } }, grid)), msg ? h('div', { key: 'g', className: 'dndp-note hl', style: { padding: '0 12px' } }, msg) : null, err ? h('div', { key: 'e', className: 'dndp-err' }, err) : null, legend,

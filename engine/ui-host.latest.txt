@@ -936,6 +936,253 @@ return {
         return { ok: true, from: a.from, to: a.to, cells: d.cells, feet: d.feetStandard, feetSimple: d.feetSimple, summary: d.cells + ' 格 · ' + d.feetStandard + ' 尺（5-10-5 规则；对角简化 ' + d.feetSimple + ' 尺）' }
       } catch (e) { return { ok: false, error: String(e && e.message || e) } }
     }))
+    // ===== 模组 / 角色 / 工具清单：把数据变成"可调用工具"（按需取用，不往上下文里塞全文）=====
+    const MOD_BOOK = '模组'
+    const entryBrief = (e) => ({ id: e.id, book: e.book, title: e.title, file: e.file })
+    unreg.push(harness.handle('mod.list', async (args) => {
+      try {
+        const a = args || {}
+        const entries = (await loadEntries()).filter(e => e.book === MOD_BOOK)
+        const mods = {}
+        for (const e of entries) {
+          const parts = String(e.file || '').split('/')
+          const m = parts[1] || '（未分类）'
+          const kind = parts.length > 3 ? parts[2] : (parts.length === 3 ? '正文/附录' : '条目')
+          const g = mods[m] = mods[m] || { module: m, entries: 0, kinds: {}, titles: [] }
+          g.entries++
+          g.kinds[kind] = (g.kinds[kind] || 0) + 1
+          if (g.titles.length < 12) g.titles.push(e.title)
+        }
+        let list = Object.keys(mods).map(k => mods[k]).sort((x, y) => y.entries - x.entries)
+        if (a.query) { const q = String(a.query).toLowerCase(); list = list.filter(m => m.module.toLowerCase().includes(q) || m.titles.join(' ').toLowerCase().includes(q)) }
+        return jclean({ ok: true, book: MOD_BOOK, total: entries.length, modules: list.length, items: list })
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('mod.search', async (args) => {
+      try {
+        const a = args || {}
+        const terms = String(a.query || '').trim().split(/[\s,，]+/).filter(Boolean)
+        if (!terms.length) return { ok: true, items: [] }
+        const books = a.book ? [String(a.book)] : (a.all ? null : [MOD_BOOK])
+        let pool = await loadEntries()
+        if (books) pool = pool.filter(e => books.includes(e.book))
+        if (a.module) pool = pool.filter(e => String(e.file || '').includes('/' + a.module + '/'))
+        const hits = []
+        for (const e of pool) {
+          let score = 0, ok = true
+          const hay = String(e.title || '') + ' ' + String(e.file || '') + ' ' + String(e.id || '')
+          for (const t of terms) {
+            const ti = countOf(e.title, t), tf = countOf(hay, t), tx = countOf(e.text, t)
+            if (!ti && !tf && !tx) { ok = false; break }
+            score += ti * 12 + (tf ? Math.min(tf, 6) * 4 : 0) + Math.min(tx, 40)
+          }
+          if (!ok) continue
+          const parts = String(e.file || '').split('/')
+          hits.push(Object.assign(entryBrief(e), { module: parts[1] || '', score: score, chars: (e.text || '').length, snippet: makeSnippet(e.text, terms[0]) }))
+        }
+        hits.sort((x, y) => y.score - x.score || x.title.length - y.title.length)
+        return jclean({ ok: true, query: a.query, scanned: pool.length, items: hits.slice(0, Math.max(1, Math.min(50, Number(a.limit) || 10))) })
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    unreg.push(harness.handle('mod.read', async (args) => {
+      try {
+        const a = args || {}
+        const entries = await loadEntries()
+        const e = a.id ? entries.find(x => x.id === a.id) : entries.find(x => x.book === MOD_BOOK && x.title === a.title)
+        if (!e) return { ok: false, error: '未找到模组条目：' + (a.id || a.title) }
+        const max = Math.max(200, Math.min(30000, Number(a.chars) || 4000))
+        const text = String(e.text || '')
+        const parts = String(e.file || '').split('/')
+        return jclean({ ok: true, id: e.id, module: parts[1] || '', title: e.title, file: e.file, chars: text.length, truncated: text.length > max, text: text.slice(0, max) })
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    // 把图鉴条目解析成结构化数值（AC/HP/属性/动作），AI 直接用数字，不用把原文塞进上下文
+    const statblock = (entry) => {
+      const t = String(entry.text || '').replace(/\r/g, '')
+      const flat = t.replace(/\s*\n\s*/g, ' | ')
+      const abil = {}
+      const raw0 = t.replace(/\r/g, '')
+      const abilRe = /力量\s*(\d+)[^敏]{0,16}?敏捷\s*(\d+)[^体]{0,16}?体质\s*(\d+)[^智]{0,16}?智力\s*(\d+)[^感]{0,16}?感知\s*(\d+)[^魅]{0,16}?魅力\s*(\d+)/.exec(raw0)
+      if (abilRe) { const keys = ['str', 'dex', 'con', 'int', 'wis', 'cha']; keys.forEach((k, i) => { abil[k] = Number(abilRe[1 + i]) }) }
+      if (!abilRe) {
+        // 两行式排布：先标题行（力量 敏捷 体质 智力 感知 魅力），再数值行（14(+2) 10(+0) …）
+        const hdr = /力量\s*敏捷\s*体质\s*智力\s*感知\s*魅力/.exec(flat)
+        if (hdr) {
+          const seg = flat.slice(hdr.index + hdr[0].length)
+          const pairs = seg.match(/\d+\s*[（(]\s*[+-]?\d+\s*[）)]/g) || []
+          const keys = ['str', 'dex', 'con', 'int', 'wis', 'cha']
+          if (pairs.length >= 6) keys.forEach((k, i) => { abil[k] = Number((/\d+/.exec(pairs[i]) || [])[0]) })
+          else {
+            const nums = (seg.match(/\d+/g) || []).map(Number)
+            if (nums.length >= 6) keys.forEach((k, i) => { abil[k] = nums[i] })
+          }
+        }
+      }
+      // 类型行：从标题之后第一段"体型 + 生物类型/阵营"里取，避免抓到种族条目里的叙述句
+      const ttl = String(entry.title || '').trim()
+      const ti = flat.indexOf(ttl)
+      const tail = ti >= 0 ? flat.slice(ti + ttl.length) : flat
+      const typeM = /(微型|小型|中型|大型|巨型|超巨型)\s*([^|]{0,26})/.exec(tail) || /(微型|小型|中型|大型|巨型|超巨型)\s*([^|]{0,26})/.exec(flat)
+      const acRaw = /(?:护甲等级|AC)[：: ]{0,4}\|?\s*([^|]{0,26})/.exec(flat)
+      const hpRaw = /(?:生命值|生命|HP)[：: ]{0,4}\|?\s*([^|]{0,26})/.exec(flat)
+      const crRaw = /(?:挑战等级|CR)[：: ]{0,4}\|?\s*([^|]{0,20})/.exec(flat)
+      const firstNum = (s) => { const m = s ? /(-?\d+)/.exec(s) : null; return m ? Number(m[1]) : null }
+      const hpFormulaAvg = (() => { if (!hpRaw) return null; const m = /(\d+d\d+[^（(]{0,6})[（(]\s*(\d+)/.exec(hpRaw[1]); return m ? Number(m[2]) : null })()
+      const acN = firstNum(acRaw && acRaw[1])
+      const hpN = hpFormulaAvg != null ? hpFormulaAvg : firstNum(hpRaw && hpRaw[1])
+      const speedM = /速度[^\d]{0,8}(\d+)\s*尺/.exec(flat)
+      const crTxt = crRaw ? crRaw[1].trim() : null
+      const crN = crTxt ? (() => { const m = /(\d+)\s*\/\s*(\d+)/.exec(crTxt); if (m) return Number(m[1]) / Number(m[2]); const d = /(\d+)/.exec(crTxt); return d ? Number(d[1]) : null })() : null
+      const pbM = /熟练加值\s*\+?(\d+)/.exec(flat)
+      const sensesM = /感官[：:| ]{0,4}([^|]{0,60})/.exec(flat)
+      const langM = /语言[：:| ]{0,4}([^|]{0,60})/.exec(flat)
+      const skillsM = /技能[：:| ]{0,4}([^|]{0,90})/.exec(flat)
+      const savesM = /豁免[：:| ]{0,4}([^|]{0,90})/.exec(flat)
+      const body = flat.replace(/^.*?(?:特质|Traits|动作|Actions)\s*\|/i, '')
+      const actions = body.split(/\|\s*(?=[^|]{2,20}[。.])/).slice(0, 14).map(s => s.trim().replace(/\s*\|+\s*/g, ' ')).filter(Boolean)
+      return jclean({
+        id: entry.id, book: entry.book, title: entry.title, file: entry.file,
+        type: typeM ? (typeM[1] + typeM[2]).replace(/\s+/g, ' ').trim() : '',
+        ac: acN, acText: acRaw ? acRaw[1].trim() : null,
+        hp: hpN, hpText: hpRaw ? hpRaw[1].trim() : null,
+        speed: speedM ? Number(speedM[1]) : null,
+        abilities: abil, mods: Object.keys(abil).length ? Object.keys(abil).reduce((o, k) => { o[k] = modOf(abil[k]); return o }, {}) : {},
+        cr: crTxt, crValue: crN, pb: pbM ? Number(pbM[1]) : null,
+        saves: savesM ? savesM[1].trim() : null, skills: skillsM ? skillsM[1].trim() : null,
+        senses: sensesM ? sensesM[1].trim() : null, languages: langM ? langM[1].trim() : null,
+        actions: actions, rawChars: t.length,
+      })
+    }
+    const looksBlock = (txt) => /(护甲等级|AC)/.test(txt) && /(生命值|生命|HP)/.test(txt) && /(微型|小型|中型|大型|巨型|超巨型)/.test(txt)
+    unreg.push(harness.handle('mod.statblock', async (args) => {
+      try {
+        const a = args || {}
+        const entries = await loadEntries()
+        let e = null
+        if (a.id) e = entries.find(x => x.id === a.id)
+        if (!e && a.title) {
+          const tt = String(a.title).trim()
+          const rank = (x) => (/怪物图鉴|模组/.test(String(x.book || '')) ? 0 : 1) * 1000 + String(x.text).length
+          e = entries.filter(x => String(x.title).trim() === tt && looksBlock(x.text)).sort((p, q) => rank(p) - rank(q))[0] || null
+          if (!e) e = entries.filter(x => String(x.title).includes(tt) && looksBlock(x.text)).sort((p, q) => rank(p) - rank(q))[0] || null
+        }
+        if (!e && a.query) {
+          const terms = String(a.query).trim().split(/[\s,，]+/).filter(Boolean)
+          const rank = (x) => (/怪物图鉴|模组/.test(String(x.book || '')) ? 0 : 1) * 1000 + String(x.title).length * 10 + String(x.text).length
+          const cand = entries.filter(x => looksBlock(x.text) && terms.every(t => String(x.title).includes(t) || String(x.text).includes(t)))
+          e = cand.sort((p, q) => rank(p) - rank(q))[0] || null
+        }
+        if (!e) return { ok: false, error: '未找到怪物条目（给 id / title / query 任一；需要条目含 AC、HP 与体型行）' }
+        const sb = statblock(e)
+        return Object.assign({ ok: true, summary: sb.title + '｜' + (sb.type || '') + '｜AC ' + sb.ac + '｜HP ' + sb.hp + '｜速度 ' + sb.speed + ' 尺｜CR ' + sb.cr }, sb)
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    // 一次调用改完一个角色（伤害/治疗/临时HP/XP/状态/物品），返回紧凑结果
+    unreg.push(harness.handle('pc.apply', async (args) => {
+      try {
+        const a = args || {}
+        const safe = String(a.id || '').replace(/[^A-Za-z0-9._-]/g, '')
+        if (!safe) return { ok: false, error: '需要 id' }
+        const pc = overlay.get(safe) ? overlay.get(safe) : JSON.parse(await fsRead(CHAR_DIR + '/' + safe + '.json'))
+        pc.hp = pc.hp || { current: 1, max: 1, temp: 0 }
+        const changes = []
+        const hpBefore = Number(pc.hp.current) || 0
+        if (a.hp != null && a.hp !== '') {
+          const delta = Number(a.hp)
+          const nv = Math.max(0, Math.min(Number(pc.hp.max) || 999, hpBefore + delta))
+          pc.hp.current = nv
+          changes.push('HP ' + hpBefore + '→' + nv + '（' + (delta >= 0 ? '+' : '') + delta + '）')
+        }
+        if (a.hpSet != null && a.hpSet !== '') { pc.hp.current = Math.max(0, Math.min(Number(pc.hp.max) || 999, Number(a.hpSet))); changes.push('HP 设为 ' + pc.hp.current) }
+        if (a.hpMax != null && a.hpMax !== '') { pc.hp.max = Math.max(1, Number(a.hpMax)); changes.push('HP上限 ' + pc.hp.max) }
+        if (a.temp != null && a.temp !== '') { pc.hp.temp = Math.max(0, Number(a.temp)); changes.push('临时HP ' + pc.hp.temp) }
+        if (a.xp != null && a.xp !== '') {
+          const d = Number(a.xp); pc.xp = Math.max(0, (Number(pc.xp) || 0) + d)
+          changes.push('XP ' + pc.xp + '（' + (d >= 0 ? '+' : '') + d + '）')
+        }
+        if (a.xpSet != null && a.xpSet !== '') { pc.xp = Math.max(0, Number(a.xpSet)); changes.push('XP 设为 ' + pc.xp) }
+        if (a.conditions) {
+          pc.conditions = pc.conditions || []
+          const add = a.conditions.add || [], rm = a.conditions.remove || []
+          for (const r of rm) { const before = pc.conditions.length; pc.conditions = pc.conditions.filter(c => c.key !== r); if (pc.conditions.length < before) changes.push('解除 ' + r) }
+          for (const c of add) {
+            const spec = typeof c === 'string' ? { key: c } : c
+            const known = CONDITIONS.find(x => x.key === spec.key)
+            const item = { key: spec.key, name: spec.name || (known && known.name) || spec.key, desc: spec.desc || (known && known.desc) || '', level: (spec.level == null ? null : Number(spec.level)), note: spec.note || '' }
+            const idx = pc.conditions.findIndex(x => x.key === item.key)
+            if (idx >= 0) pc.conditions[idx] = item; else pc.conditions.push(item)
+            changes.push('状态 ' + item.name + (item.level != null ? ' ' + item.level : ''))
+          }
+        }
+        if (a.items) {
+          pc.inventory = pc.inventory || []
+          for (const it of (a.items.remove || [])) { const before = pc.inventory.length; pc.inventory = pc.inventory.filter(x => x.key !== it && x.name !== it); if (pc.inventory.length < before) changes.push('失去 ' + it) }
+          for (const it of (a.items.add || [])) {
+            const spec = typeof it === 'string' ? { key: it, name: it } : it
+            const qty = Math.max(1, Number(spec.qty) || 1)
+            const ex = pc.inventory.find(x => x.key === spec.key)
+            if (ex) ex.qty = (Number(ex.qty) || 1) + qty
+            else pc.inventory.push(jclean({ key: spec.key, name: spec.name || spec.key, qty: qty, kind: spec.kind || 'gear', cat: spec.kind || 'gear', damage: spec.damage || null, dmgType: spec.dmgType || null, acBonus: (spec.acBonus == null ? null : Number(spec.acBonus)), props: spec.props || null, desc: spec.desc || null }))
+            changes.push('获得 ' + (spec.name || spec.key) + (qty > 1 ? '×' + qty : ''))
+          }
+        }
+        if (a.currency) { pc.currency = pc.currency || { gp: 0, sp: 0, cp: 0 }; for (const k of ['gp', 'sp', 'cp']) if (a.currency[k] != null) { pc.currency[k] = Math.max(0, (Number(pc.currency[k]) || 0) + Number(a.currency[k])); changes.push(k + ' ' + pc.currency[k]) } }
+        if (a.note) pc.notes = (pc.notes ? pc.notes + '\n' : '') + String(a.note)
+        pc.meta = pc.meta || {}; pc.meta.updatedAt = nowIso()
+        const r = await persist(pc)
+        let logged = null
+        if (a.log) {
+          const res = await pushLog([{ kind: a.logKind || 'state', actor: pc.name, text: a.log, detail: changes.join('；') }], {})
+          logged = res.made[0] ? res.made[0].id : null
+        }
+        return jclean({ ok: true, id: pc.id, name: pc.name, hp: { cur: pc.hp.current, max: pc.hp.max, temp: pc.hp.temp || 0 }, xp: Number(pc.xp) || 0, conditions: (pc.conditions || []).map(c => c.name + (c.level != null ? ' ' + c.level : '')), inventoryCount: (pc.inventory || []).length, changes: changes, logged: logged, saved: !!r.ok, saveError: r.error || '', summary: (changes.length ? changes.join('；') : '无变化') })
+      } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    }))
+    // 工具清单：让任何 agent / 宿主都能发现"这座桥上有什么能力"
+    unreg.push(harness.handle('tools.list', async () => {
+      const T = (name, group, desc, args) => ({ name: name, group: group, desc: desc, args: args })
+      const tools = [
+        T('party.list', '角色', '列出全部角色（名字/职业/等级/HP）', {}),
+        T('party.sheet', '角色', '取一张角色卡的完整派生数据（HP/AC/属性/技能/法术/装备/资源）', { id: '角色 id' }),
+        T('pc.apply', '角色', '一次改完角色：hp 增减、hpSet/temp、xp 增减、状态增删、物品增删、货币、note；可 log 一条战斗记录', { id: '', hp: '-5', xp: '+50', conditions: { add: [{ key: 'prone' }], remove: ['poisoned'] }, items: { add: [{ key: 'shortbow', name: '短弓', kind: 'weapon', damage: '1d6', dmgType: 'piercing' }], remove: ['torch'] }, currency: { sp: 8 }, log: '被短弓射倒' }),
+        T('build.options', '角色', '建卡可选项（种族/职业/背景/武器/护甲/套装，含套装内容）', {}),
+        T('build.create', '角色', '按规格建 1 级角色并存盘', { json: '{name,race,cls,bg,scores,skills,...}' }),
+        T('levelset.info', '角色', '算出升级到目标等级需要做的选择（子职/法术/专长/兼职）', { id: '', target: 5 }),
+        T('levelset.apply', '角色', '应用升级与选择', { json: '{id,target,choices}' }),
+        T('multiclass.add', '角色', '兼职一个新职业 1 级（校验属性前置）', { json: '{id,cls}' }),
+        T('sheet.equip', '角色', '装备/卸下（armor|shield|mainHand|offHand|worn）', { json: '{id,slot,key,clear}' }),
+        T('sheet.item.add', '角色', '加物品到背包（可自定义武器/护甲数值）', { json: '{id,key,name,kind,damage,acBonus}' }),
+        T('sheet.item.remove', '角色', '从背包移除物品', { json: '{id,key}' }),
+        T('sheet.condition.set', '角色', '设置状态（5e 状态+自定义）', { json: '{id,key,level,note}' }),
+        T('sheet.pack.take', '角色', '从起始套装里取出具体物品（含 all）', { json: '{id,packKey,itemKey,all}' }),
+        T('sheet.patch', '角色', '手动覆盖 HP/XP/AC', { json: '{id,patch:{hpCur,hpMax,hpTemp,xp,ac}}' }),
+        T('roll.dice', '骰子', '掷骰（支持 1d20+5 / 4d6dl1 / 优势劣势），可落盘战斗记录', { expr: '1d20+5', advantage: 'adv|dis', actor: '', label: '', append: true }),
+        T('log.list', '战斗记录', '读战斗记录（轮次、条目、掷骰明细）', { limit: 100 }),
+        T('log.append', '战斗记录', '写入战斗记录（叙述/攻击/伤害/移动/状态）', { entries: [{ kind: 'narrate', actor: 'DM', text: '' }] }),
+        T('log.set', '战斗记录', '设置战役名与轮次', { campaign: '', round: 2 }),
+        T('log.clear', '战斗记录', '清空战斗记录', {}),
+        T('map.get', '地图', '取当前战术地图（5 尺格、地形 ASCII、单位）', {}),
+        T('map.set', '地图', '整张地图替换/新建（AI 布景入口）', { w: 24, h: 14, name: '', terrain: ['....', '####'], tokens: [{ name: '地精', kind: 'enemy', x: 3, y: 2, hp: 7, max: 7, speed: 30 }] }),
+        T('map.terrain.set', '地图', '改地形：整行、整片或按格 [{x,y,t}]', { cells: [{ x: 3, y: 4, t: '#' }] }),
+        T('map.token.add', '地图', '放一个单位', { token: { name: '狼', kind: 'enemy', x: 5, y: 5, hp: 11, max: 11, speed: 40 } }),
+        T('map.token.move', '地图', '移动单位（自动折算距离并写入战斗记录，超速会提示）', { id: '', x: 8, y: 9, log: true }),
+        T('map.token.update', '地图', '改单位（hp/note/color/kind/name/speed）', { id: '', patch: { hp: 4 } }),
+        T('map.token.remove', '地图', '移除单位', { id: '' }),
+        T('map.measure', '地图', '量两点距离（5-10-5 规则 + 对角简化）', { from: { x: 0, y: 0 }, to: { x: 6, y: 4 } }),
+        T('rules.stats', '规则书', '索引统计（书单与条目数）', {}),
+        T('rules.search', '规则书', '全文检索规则书（AND 关键词，返回片段）', { query: '擒抱 挣脱', book: '玩家手册', limit: 8 }),
+        T('rules.read', '规则书', '按 id 读规则书条目全文', { id: '玩家手册:15' }),
+        T('mod.list', '模组', '列出模组（含条目数、类型分布、标题样例）', { query: '矿坑' }),
+        T('mod.search', '模组', '在模组语料里检索（默认只搜模组，可 all/book/module 限定）', { query: '地精 伏击', module: '矿坑', limit: 10 }),
+        T('mod.read', '模组', '读模组条目正文（chars 截断，避免整篇塞进上下文）', { id: '模组:505', chars: 4000 }),
+        T('mod.statblock', '模组', '把图鉴条目解析成结构化数值（AC/HP/速度/六维/CR/动作）', { title: '地精', 或: 'query/id' }),
+        T('tools.list', '元', '本体：列出这座桥上的全部能力（本清单）', {}),
+        T('ui.source', '元', '读引擎源码（热加载用）', { file: 'ui-client.latest.txt' }),
+      ]
+      const groups = {}
+      tools.forEach(t => { groups[t.group] = (groups[t.group] || 0) + 1 })
+      return jclean({ ok: true, version: 'v18', count: tools.length, groups: groups, tools: tools, plugins: 'plugins/*.mjs 会被自动挂到同一座桥上，用 ext.list 枚举' })
+    }))
     return () => { unreg.forEach(f => f()) }
   }
 }

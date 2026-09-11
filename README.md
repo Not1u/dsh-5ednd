@@ -71,8 +71,32 @@ node tools/test-equip.mjs
 - **数据向前兼容**：档案带 `schemaVersion`，迁移脚本（`tools/migrate-*.mjs`）逐步升级，新字段一律可选。
 - **版本锚点**：`dsh.json` 记录已验证的 DSH 版本，不匹配时给出明确提示。
 
+## 工具层（MCP 风格）
+
+所有能力都收敛到一座**同源 HTTP 桥**上：`POST /dnd5e/api {op, args} → {ok, value}`。
+数据（规则书索引 6803 条、模组 624 条、角色卡、地图、战斗记录）**始终留在磁盘**，
+被调用时才按需取用，因此可以把整套资料挂在 AI 旁边而不占用上下文。
+
+- 发现能力：`{op:"tools.list"}`（核心 op，按角色/骰子/战斗记录/地图/规则书/模组/元 分组）、`{op:"ext.list"}`（插件与扩展 op）。
+- 模组：`mod.list` / `mod.search` / `mod.read` / **`mod.statblock`**（把图鉴条目解析成 AC/HP/速度/六维/CR/动作的结构化数值）。
+- 角色：`party.list` / `party.sheet` / **`pc.apply`**（一次改完 HP、XP、状态、物品、货币，并可写入战斗记录）/ `levelset.*` / `multiclass.add` / `sheet.*`。
+- 地图：`map.get` / `map.set` / `map.terrain.set` / `map.token.*` / `map.measure`（5 尺格、5-10-5 距离）。
+- 战斗记录与骰子：`roll.dice`（优势/劣势/弃骰）/ `log.list|append|set|clear`。
+
+**扩展插件**：把 `.mjs` 丢进 `plugins/` 即可自动挂到同一座桥上（`{name, ops}` 或 `setup(api)`），
+`api` 提供 `repoRoot` / `call(op,args)` / `readJson` / `writeJson` / `log`。详见 `plugins/README.md`，
+现成示例：遭遇战统计、规则速查、**地图导出 SVG + 外置图像模型调用**（`plugins/image-export.mjs`）。
+
+命令行探针（推荐，避开 PowerShell 的编码坑）：
+
+```bash
+node tools/dnd-api.mjs tools.list '{}'
+node tools/dnd-api.mjs mod.statblock '{"title":"熊地精"}'
+node tools/dnd-api.mjs pc.apply '{"id":"pc-turiel-mistveil","hp":-3,"log":"被短弓射中"}'
+```
+
 ## 许可与版权
 
 - **代码**：MIT。
 - **规则数据**（`rules/*.json`）：基于 SRD 5.1（CC-BY-4.0）整理，署名见 `NOTICE.md`。
-- **规则书原文索引**（`data/rules-index/`）：**不随仓库分发**。由使用者用自己合法持有的规则书语料本地生成（`tools/index-rules.mjs`），仅存于本机，请勿公开上传。
+- **规则书原文索引**（`data/rules-index/`）：按本项目决定**随仓库内置**（学习／单人跑团自用），语料由使用者本地合法持有的规则书生成（`tools/index-rules.mjs`）。版权归原作者与出版方，若权利人要求将移除，见 `NOTICE.md`。

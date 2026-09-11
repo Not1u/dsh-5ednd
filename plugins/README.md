@@ -45,6 +45,31 @@ export const setup = (api) => ({
 |---|---|---|
 | `encounter-stats.mjs` | `ext.encounter.stats` | 读战斗记录，统计每人攻击次数/命中率/伤害/治疗/移动距离 |
 | `rule-lookup.mjs` | `ext.rule.lookup` | 关键词 → 直接返回规则书正文（内部编排 `rules.search` + `rules.read`） |
+| `image-export.mjs` | `ext.image.map` / `ext.image.list` / `ext.image.provider` / `ext.image.generate` | 地图 → SVG 落盘（本地，零依赖）；外置图像模型（OpenAI 兼容 / webhook）生成场景图与立绘 |
+
+## 图像外挂怎么配
+
+本地导出（地图转 SVG）开箱可用：侧栏地图面板的「⬇ 导出图片」，或
+
+```bash
+node tools/dnd-api.mjs ext.image.map '{"tile":40}'
+```
+
+要生成真正的插画/立绘，配好环境变量即可，插件会在调用时读取：
+
+```
+DND5E_IMAGE_URL=https://api.openai.com/v1/images/generations
+DND5E_IMAGE_KEY=sk-...
+DND5E_IMAGE_MODEL=gpt-image-1
+DND5E_IMAGE_STYLE=TRPG 战术地图风格，俯视视角，清晰网格
+```
+
+```bash
+node tools/dnd-api.mjs ext.image.provider '{}'                 # 看配置状态
+node tools/dnd-api.mjs ext.image.generate '{"prompt":"地精巢穴入口，溪流从洞口涌出","kind":"scene"}'
+```
+
+生成的图片落在 `data/images/`，`ext.image.list` 可枚举。
 
 ## 发现已加载的插件
 
